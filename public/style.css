@@ -1,25 +1,462 @@
-/* style.css – Styling für Hex */
+/* style.css – Styling für Hex (dunkles Theme nach den Mockups der Spielidee) */
+
+/* ---------- Farben und Maße zentral ---------- */
+:root {
+  --bg: #15171c;
+  --flaeche: #23262f;          /* Karten und Panels */
+  --flaeche-hoch: #2c303b;     /* sekundäre Knöpfe, Hervorhebungen */
+  --rahmen: #3b404d;
+  --eingabe: #111318;
+  --text: #f3f4f6;
+  --text-gedaempft: #a6adbb;
+
+  --rot: #e2001a;              /* DHBW-Rot */
+  --rot-dunkel: #b80015;
+  --rot-text: #ff6b7a;         /* rote Schrift auf dunklem Grund */
+  --blau: #2563eb;
+  --blau-dunkel: #1d4fc4;
+  --blau-text: #8ab0ff;
+  --auf-farbe: #ffffff;        /* Schrift auf roten/blauen Flächen */
+
+  --feld: #3a3f4c;
+  --feld-linie: #252932;
+  --feld-hover-red: #6e2731;
+  --feld-hover-blue: #2a3d72;
+
+  --fokus: #ffcc4d;
+  --warnung: #8a5a00;
+
+  --radius: 16px;
+  --schatten: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+/* ---------- Grundlagen ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: dark; }
 
 body {
-  font-family: sans-serif;
-  background: #f4f1ea;
-  text-align: center;
   margin: 0;
-  padding: 20px;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 600px at 15% -10%, #232838 0%, transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-#brett svg {
-  max-width: 100%;
+[hidden] { display: none !important; }
+
+h1, h2 { margin: 0; line-height: 1.2; }
+h1:focus, h2:focus { outline: none; }
+
+:focus-visible {
+  outline: 3px solid var(--fokus);
+  outline-offset: 2px;
+}
+
+.nur-screenreader {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+main {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.ansicht { width: 100%; }
+
+/* ---------- Karten, Knöpfe, Eingaben ---------- */
+.karte {
+  background: linear-gradient(180deg, #272b35, var(--flaeche));
+  border: 1px solid var(--rahmen);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+  padding: 32px;
+}
+
+.karte-schmal {
+  max-width: 420px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.karte h1 { font-size: 1.6rem; margin-bottom: 6px; }
+
+.untertitel {
+  color: var(--text-gedaempft);
+  margin: 0 0 20px;
+}
+
+.logo-hex {
+  width: 64px;
+  height: 72px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  background: var(--rot);
+  clip-path: var(--hex);
+  color: var(--auf-farbe);
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.formular { display: grid; gap: 12px; }
+
+input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--rahmen);
+  border-radius: 10px;
+  background: var(--eingabe);
+  color: var(--text);
+  font: inherit;
+}
+
+input[type="text"]::placeholder { color: var(--text-gedaempft); opacity: 1; }
+
+input[aria-invalid="true"] { border-color: var(--rot-text); }
+
+.feld-fehler {
+  margin: -4px 0 0;
+  color: var(--rot-text);
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.knopf {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.knopf:active:not(:disabled) { transform: translateY(1px); }
+.knopf:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.knopf-primaer { background: var(--rot); color: var(--auf-farbe); }
+.knopf-primaer:hover:not(:disabled) { background: var(--rot-dunkel); }
+
+.knopf-sekundaer {
+  background: var(--flaeche-hoch);
+  border-color: var(--rahmen);
+  color: var(--text);
+}
+.knopf-sekundaer:hover:not(:disabled) { border-color: var(--text-gedaempft); }
+
+.knopf-gefahr,
+.knopf-gefahr:hover:not(:disabled) {
+  background: var(--rot);
+  border-color: var(--rot);
+  color: var(--auf-farbe);
+}
+
+.knopf-reihe { display: grid; gap: 10px; }
+
+.pille {
+  display: inline-block;
+  margin: 0 0 20px;
+  padding: 8px 18px;
+  border: 1px solid var(--rahmen);
+  border-radius: 999px;
+  background: var(--flaeche-hoch);
+  color: var(--text-gedaempft);
+}
+.pille strong { color: var(--text); }
+
+/* ---------- Wartebildschirm: Ring aus pulsierenden Sechsecken ---------- */
+.warte-ring {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 20px;
+}
+
+.warte-ring span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 25px;
+  margin: -12.5px 0 0 -11px;
+  background: var(--rot);
+  clip-path: var(--hex);
+  opacity: 0.25;
+  animation: warte-puls 1.2s ease-in-out infinite;
+}
+
+/* Jedes Sechseck um 60° weiter gedreht und nach außen geschoben */
+.warte-ring span:nth-child(1) { transform: rotate(0deg) translateY(-36px); }
+.warte-ring span:nth-child(2) { transform: rotate(60deg) translateY(-36px); animation-delay: 0.2s; }
+.warte-ring span:nth-child(3) { transform: rotate(120deg) translateY(-36px); animation-delay: 0.4s; }
+.warte-ring span:nth-child(4) { transform: rotate(180deg) translateY(-36px); animation-delay: 0.6s; }
+.warte-ring span:nth-child(5) { transform: rotate(240deg) translateY(-36px); animation-delay: 0.8s; }
+.warte-ring span:nth-child(6) { transform: rotate(300deg) translateY(-36px); animation-delay: 1s; }
+
+@keyframes warte-puls {
+  0%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+/* ---------- Spielansicht: Brett links, Panel rechts ---------- */
+.spiel-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.brett-bereich {
+  position: relative;
+  min-width: 0;
+}
+
+.brett svg {
+  display: block;
+  width: 100%;
   height: auto;
+  max-height: calc(100vh - 48px);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Ein einzelnes Sechseck (leeres Feld) */
+/* Brett-Elemente im SVG */
 .feld {
-  fill: #fdfaf2;
-  stroke: #555;
+  fill: var(--feld);
+  stroke: var(--feld-linie);
   stroke-width: 1.5;
+  transition: fill 0.15s;
 }
 
-/* Farbige Brettränder: Rot = oben/unten, Blau = links/rechts */
-.rand-rot  { stroke: #d62828; stroke-width: 5; stroke-linecap: round; fill: none; }
-.rand-blau { stroke: #1d4ed8; stroke-width: 5; stroke-linecap: round; fill: none; }
+.brett svg.aktiv .feld.frei { cursor: pointer; }
+.brett svg.hover-red .feld.frei:hover { fill: var(--feld-hover-red); }
+.brett svg.hover-blue .feld.frei:hover { fill: var(--feld-hover-blue); }
+
+.rand-rot,
+.rand-blau {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.rand-rot { stroke: var(--rot); }
+.rand-blau { stroke: var(--blau); }
+
+.stein {
+  pointer-events: none;
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1;
+}
+
+.stein.gewinn { stroke: #ffffff; stroke-width: 2.5; }
+
+.gewinn-linie {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* Panel mit Spielinformationen */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  background: linear-gradient(180deg, #272b35, var(--flaeche));
+  border: 1px solid var(--rahmen);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+}
+
+.panel-titel {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-gedaempft);
+}
+
+.spielerliste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.spieler {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.spieler.am-zug {
+  background: var(--flaeche-hoch);
+  border-color: var(--rahmen);
+}
+
+.farb-hex {
+  flex: none;
+  width: 30px;
+  height: 34px;
+  clip-path: var(--hex);
+}
+.farb-hex-red { background: radial-gradient(circle at 35% 30%, #ff8a96, var(--rot) 45%, #8c0010); }
+.farb-hex-blue { background: radial-gradient(circle at 35% 30%, #8fb3ff, var(--blau) 45%, #123a91); }
+
+.spieler-name { font-weight: 700; overflow-wrap: anywhere; }
+.du { color: var(--text-gedaempft); }
+.spieler-farbe {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-gedaempft);
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 2px solid var(--rahmen);
+  border-radius: 12px;
+  background: var(--eingabe);
+}
+.status-red { border-color: var(--rot); }
+.status-blue { border-color: var(--blau); }
+.status-titel { font-size: 1.15rem; }
+.status-text { color: var(--text-gedaempft); }
+
+.zugzaehler {
+  margin: 0;
+  color: var(--text-gedaempft);
+  font-size: 0.9rem;
+}
+
+/* ---------- Spielende: Karte über dem Brett ---------- */
+.spielende {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 17, 21, 0.45);
+  border-radius: var(--radius);
+}
+
+.ende-karte {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.ende-icon {
+  width: 60px;
+  height: 68px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  background: var(--rot);
+  clip-path: var(--hex);
+  color: var(--auf-farbe);
+}
+.spielende[data-farbe="blue"] .ende-icon { background: var(--blau); }
+.spielende[data-farbe=""] .ende-icon { background: var(--flaeche-hoch); }
+
+.ende-karte h2 { font-size: 1.6rem; margin-bottom: 8px; }
+.ende-karte .untertitel { margin-bottom: 6px; }
+
+.ende-ergebnis {
+  margin: 0 0 18px;
+  font-weight: 600;
+}
+
+/* ---------- Meldungen und Verbindungshinweis ---------- */
+.meldungen {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 50;
+  display: grid;
+  gap: 8px;
+  width: min(420px, calc(100% - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.meldung {
+  padding: 10px 14px;
+  background: var(--flaeche-hoch);
+  border: 1px solid var(--rahmen);
+  border-left: 4px solid var(--blau);
+  border-radius: 10px;
+  box-shadow: var(--schatten);
+}
+.meldung-fehler { border-left-color: var(--rot); }
+
+.verbindung {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--warnung);
+  color: var(--auf-farbe);
+  font-weight: 600;
+  text-align: center;
+}
+
+.verbindung-punkt {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--auf-farbe);
+  animation: warte-puls 1s ease-in-out infinite;
+}
+
+/* ---------- Kleine Bildschirme: Panel unter das Brett ---------- */
+@media (max-width: 900px) {
+  .spiel-layout { grid-template-columns: minmax(0, 1fr); }
+  .panel { padding: 18px; }
+}
+
+@media (max-width: 480px) {
+  main { padding: 16px 8px; }
+  .karte { padding: 24px 18px; }
+}
+
+/* ---------- Weniger Bewegung, wenn gewünscht ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .warte-ring span { opacity: 0.7; }
+}

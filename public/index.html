@@ -3,15 +3,108 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Hex – das Verbindungsspiel für zwei Personen im Browser">
+  <meta name="theme-color" content="#16181d">
   <title>Hex</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,4 90,27 90,73 50,96 10,73 10,27' fill='%23e2001a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Hex</h1>
+  <!-- Hinweis bei Verbindungsabbruch (wird von client.js ein- und ausgeblendet) -->
+  <div id="verbindung" class="verbindung" role="status" hidden>
+    <span class="verbindung-punkt" aria-hidden="true"></span>
+    Verbindung verloren – verbinde neu …
+  </div>
 
-  <!-- Das Spielbrett wird von client.js als SVG hier hineingezeichnet -->
-  <div id="brett"></div>
+  <main>
+    <!-- 1. Anmelden -->
+    <section id="ansicht-login" class="ansicht" aria-labelledby="login-titel">
+      <div class="karte karte-schmal">
+        <div class="logo-hex" aria-hidden="true">H</div>
+        <h1 id="login-titel" tabindex="-1" data-fokus>Willkommen bei Hex</h1>
+        <p class="untertitel">Gib deinen Namen ein, um zu spielen</p>
+        <form id="login-form" class="formular" novalidate>
+          <label for="name-eingabe" class="nur-screenreader">Dein Spielername</label>
+          <input id="name-eingabe" name="name" type="text" maxlength="20" autocomplete="nickname"
+                 placeholder="Dein Spielername" required aria-describedby="name-fehler">
+          <p id="name-fehler" class="feld-fehler" hidden></p>
+          <button id="knopf-spielen" type="submit" class="knopf knopf-primaer">Spielen</button>
+        </form>
+      </div>
+    </section>
 
-  <script src="client.js"></script>
+    <!-- 2. Warten auf den Gegner -->
+    <section id="ansicht-warten" class="ansicht" aria-labelledby="warten-titel" hidden>
+      <div class="karte karte-schmal">
+        <div class="warte-ring" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <h1 id="warten-titel" tabindex="-1" data-fokus>Warte auf Gegner …</h1>
+        <p class="untertitel">Sobald sich ein zweiter Spieler anmeldet, startet das Spiel automatisch.</p>
+        <p class="pille">Angemeldet als <strong id="warten-name"></strong></p>
+        <button id="knopf-abbrechen" type="button" class="knopf knopf-sekundaer">Abbrechen</button>
+      </div>
+    </section>
+
+    <!-- 3. Das Spiel -->
+    <section id="ansicht-spiel" class="ansicht" aria-labelledby="spiel-titel" hidden>
+      <div class="spiel-layout">
+        <div class="brett-bereich">
+          <div id="brett" class="brett"></div>
+
+          <!-- 4. Spielende (liegt über dem Brett) -->
+          <div id="spielende" class="spielende" role="dialog" aria-labelledby="ende-titel" aria-describedby="ende-text" hidden>
+            <div class="karte ende-karte">
+              <div class="ende-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="9" r="6"/>
+                  <path d="M8.5 14 7 22l5-3 5 3-1.5-8"/>
+                </svg>
+              </div>
+              <h2 id="ende-titel" tabindex="-1">Rot gewinnt!</h2>
+              <p id="ende-text" class="untertitel"></p>
+              <p id="ende-ergebnis" class="ende-ergebnis"></p>
+              <div class="knopf-reihe">
+                <button id="knopf-nochmal" type="button" class="knopf knopf-primaer">Nochmal spielen</button>
+                <button id="knopf-abmelden" type="button" class="knopf knopf-sekundaer">Abmelden</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="panel" aria-label="Spielinformationen">
+          <h1 id="spiel-titel" class="panel-titel" tabindex="-1" data-fokus>Spiel #<span id="spiel-id"></span></h1>
+          <ul class="spielerliste">
+            <li id="spieler-red" class="spieler">
+              <span class="farb-hex farb-hex-red" aria-hidden="true"></span>
+              <span class="spieler-text">
+                <span class="spieler-name"></span> <span class="du">(du)</span>
+                <span class="spieler-farbe">Rot · verbindet oben und unten</span>
+              </span>
+            </li>
+            <li id="spieler-blue" class="spieler">
+              <span class="farb-hex farb-hex-blue" aria-hidden="true"></span>
+              <span class="spieler-text">
+                <span class="spieler-name"></span> <span class="du">(du)</span>
+                <span class="spieler-farbe">Blau · verbindet links und rechts</span>
+              </span>
+            </li>
+          </ul>
+          <div id="status" class="status" aria-live="polite">
+            <strong id="status-titel" class="status-titel"></strong>
+            <span id="status-text" class="status-text"></span>
+          </div>
+          <p id="zugzaehler" class="zugzaehler"></p>
+          <button id="knopf-aufgeben" type="button" class="knopf knopf-sekundaer">Aufgeben</button>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- Kurze Meldungen (z. B. "Feld ist belegt") -->
+  <div id="meldungen" class="meldungen" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="client.js"></script>
 </body>
 </html>

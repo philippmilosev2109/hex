@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "uitest": "node scripts/ui-test.js"
   },
   "jest": {
     "testEnvironment": "node"
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "jest": "^30.5.2",
+    "playwright": "^1.64.1",
     "socket.io-client": "^4.8.4"
   }
 }

@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Screenshots aus dem UI-Test (Playwright)
+screenshots/
