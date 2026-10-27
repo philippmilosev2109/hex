@@ -1,0 +1,2 @@
+# hex
+full hex game 
