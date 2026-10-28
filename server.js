@@ -7,6 +7,8 @@
 
 const path = require('path');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const express = require('express');
@@ -63,7 +65,13 @@ function erstelleServer(optionen = {}) {
 
   const app = express();
   app.use(express.static(path.join(__dirname, 'public')));
-  const httpServer = http.createServer(app);
+  // Mit HEX_SSL_CERT und HEX_SSL_KEY (Pfade zu den Zertifikatsdateien) läuft der Server über HTTPS,
+  // sonst wie bisher über einfaches HTTP.
+  const zertifikat = process.env.HEX_SSL_CERT;
+  const schluessel = process.env.HEX_SSL_KEY;
+  const httpServer = (zertifikat && schluessel)
+    ? https.createServer({ cert: fs.readFileSync(zertifikat), key: fs.readFileSync(schluessel) }, app)
+    : http.createServer(app);
   const io = new Server(httpServer, {
     maxHttpBufferSize: 16 * 1024,  // keine riesigen Nachrichten annehmen
     pingInterval: 10000,           // tote Verbindungen nach spätestens ~15 s erkennen
@@ -907,8 +915,9 @@ if (require.main === module) {
   const server = erstelleServer();
   server.starte(port, '0.0.0.0')
     .then(() => {
-      console.log(`Hex-Server läuft auf http://localhost:${port}`);
-      for (const ip of netzwerkAdressen()) console.log(`Mitspieler öffnen: http://${ip}:${port}`);
+      const protokoll = (process.env.HEX_SSL_CERT && process.env.HEX_SSL_KEY) ? 'https' : 'http';
+      console.log(`Hex-Server läuft auf ${protokoll}://localhost:${port}`);
+      for (const ip of netzwerkAdressen()) console.log(`Mitspieler öffnen: ${protokoll}://${ip}:${port}`);
     })
     .catch(fehler => {
       if (fehler.code === 'EADDRINUSE') console.error(`Port ${port} ist schon belegt. Anderer Port: PORT=3001 npm start`);

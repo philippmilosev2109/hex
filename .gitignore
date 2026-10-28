@@ -150,3 +150,8 @@ vite.config.ts.timestamp-*
 
 # Screenshots aus dem UI-Test (Playwright)
 screenshots/
+
+# Zugangsdaten und Zertifikate (nie einchecken)
+rfc2136.ini
+*.pem
+*_key

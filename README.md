@@ -94,6 +94,7 @@ Mitspieler öffnen: http://192.168.0.148:3000
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `PORT` | `3000` | Port des Servers |
+| `HEX_SSL_CERT` / `HEX_SSL_KEY` | – | Pfade zu Zertifikat und Schlüssel (PEM). Nur wenn beide gesetzt sind, läuft der Server über HTTPS |
 | `HEX_ZEIT_MS` | `180000` | Bedenkzeit pro Spieler in Millisekunden (3 Minuten) |
 | `HEX_RECONNECT_MS` | `30000` | Gnadenfrist zum Wiederverbinden in Millisekunden |
 | `HEX_PRIVAT_MS` | `600000` | Gültigkeit eines privaten Codes in Millisekunden (10 Minuten) |
