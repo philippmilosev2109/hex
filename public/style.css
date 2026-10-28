@@ -342,16 +342,6 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 }
 .pille strong { color: var(--text); }
 
-.regel-kurz {
-  margin: 20px 0 0;
-  color: var(--text-2);
-  font-size: 0.9rem;
-}
-
-.regel-farbe { font-weight: 700; }
-.regel-rot { color: var(--rot-text); }
-.regel-blau { color: var(--blau-text); }
-
 /* ==========================================================
    4b. Lobby
    ========================================================== */
