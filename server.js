@@ -859,10 +859,11 @@ function erstelleServer(optionen = {}) {
   // ---------- Steuerung und Kontrolle ----------
 
   // Server starten. Port 0 = freien Port wählen (für Tests).
+  // host = null: Node wählt selbst (alle Adressen, IPv6 und IPv4) – nötig für Server nur mit IPv6-Adresse.
   function starte(port = 3000, host = '0.0.0.0') {
     return new Promise((resolve, reject) => {
       httpServer.once('error', reject);
-      httpServer.listen(port, host, () => {
+      httpServer.listen(port, ...(host ? [host] : []), () => {
         httpServer.off('error', reject);
         resolve(httpServer.address().port);
       });
@@ -913,7 +914,7 @@ function netzwerkAdressen() {
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
   const server = erstelleServer();
-  server.starte(port, '0.0.0.0')
+  server.starte(port, process.env.HEX_HOST || null)
     .then(() => {
       const protokoll = (process.env.HEX_SSL_CERT && process.env.HEX_SSL_KEY) ? 'https' : 'http';
       console.log(`Hex-Server läuft auf ${protokoll}://localhost:${port}`);
