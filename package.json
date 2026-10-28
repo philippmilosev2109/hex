@@ -7,6 +7,7 @@
     "start": "node server.js",
     "test": "jest --runInBand",
     "loadtest": "node scripts/loadtest.js",
+    "contrast": "node scripts/contrast.js",
     "uitest": "node scripts/ui-test.js"
   },
   "jest": {

@@ -55,14 +55,14 @@ async function warteAufSpielstart(seite) {
 }
 
 async function steinAnzahl(seite) {
-  return seite.locator('circle.stein').count();
+  return seite.locator('.steine .stein').count();
 }
 
 // Klickt ein Feld und wartet, bis beide Browser den neuen Stein zeigen
 async function zug(amZug, andere, row, col, erwarteteSteine) {
   await amZug.click(`polygon.feld[data-r="${row}"][data-c="${col}"]`);
   for (const seite of [amZug, andere]) {
-    await seite.waitForFunction(n => document.querySelectorAll('circle.stein').length === n, erwarteteSteine);
+    await seite.waitForFunction(n => document.querySelectorAll('.steine .stein').length === n, erwarteteSteine);
   }
 }
 
@@ -121,7 +121,7 @@ async function durchlauf(browser, url, groesse) {
   const text = await rot.textContent('#ende-text');
   if (titel !== 'Rot gewinnt!') throw new Error(`Falscher Titel: ${titel}`);
   if (!text.includes('oben und unten verbunden – nach 21 Zügen')) throw new Error(`Falscher Text: ${text}`);
-  const pfadSteine = await rot.locator('circle.stein.gewinn').count();
+  const pfadSteine = await rot.locator('.stein.gewinn').count();
   if (pfadSteine !== 11) throw new Error(`Gewinnpfad hat ${pfadSteine} statt 11 Steinen`);
   await rot.waitForTimeout(400);
   await foto(rot, `${groesse.name}-4-spielende-sieger`);

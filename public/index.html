@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Hex – das Verbindungsspiel für zwei Personen im Browser">
-  <meta name="theme-color" content="#16181d">
+  <meta name="theme-color" content="#111318">
   <title>Hex</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,4 90,27 90,73 50,96 10,73 10,27' fill='%23e2001a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
@@ -15,6 +15,16 @@
     <span class="verbindung-punkt" aria-hidden="true"></span>
     Verbindung verloren – verbinde neu …
   </div>
+
+  <header class="kopfzeile">
+    <div class="marke">
+      <span class="marke-hex" aria-hidden="true">H</span>
+      <span class="marke-text">Hex</span>
+    </div>
+    <div class="kopf-rechts">
+      <span id="kopf-name" class="kopf-name" hidden></span>
+    </div>
+  </header>
 
   <main>
     <!-- 1. Anmelden -->
@@ -30,6 +40,10 @@
           <p id="name-fehler" class="feld-fehler" hidden></p>
           <button id="knopf-spielen" type="submit" class="knopf knopf-primaer">Spielen</button>
         </form>
+        <p class="regel-kurz">
+          <span class="regel-farbe regel-rot">Rot ↕</span> verbindet oben und unten,
+          <span class="regel-farbe regel-blau">Blau ↔</span> links und rechts.
+        </p>
       </div>
     </section>
 
@@ -47,7 +61,7 @@
     </section>
 
     <!-- 3. Das Spiel -->
-    <section id="ansicht-spiel" class="ansicht" aria-labelledby="spiel-titel" hidden>
+    <section id="ansicht-spiel" class="ansicht ansicht-breit" aria-labelledby="spiel-titel" hidden>
       <div class="spiel-layout">
         <div class="brett-bereich">
           <div id="brett" class="brett"></div>
@@ -76,14 +90,14 @@
           <h1 id="spiel-titel" class="panel-titel" tabindex="-1" data-fokus>Spiel #<span id="spiel-id"></span></h1>
           <ul class="spielerliste">
             <li id="spieler-red" class="spieler">
-              <span class="farb-hex farb-hex-red" aria-hidden="true"></span>
+              <span class="farb-hex farb-hex-red" aria-hidden="true">↕</span>
               <span class="spieler-text">
                 <span class="spieler-name"></span> <span class="du">(du)</span>
                 <span class="spieler-farbe">Rot · verbindet oben und unten</span>
               </span>
             </li>
             <li id="spieler-blue" class="spieler">
-              <span class="farb-hex farb-hex-blue" aria-hidden="true"></span>
+              <span class="farb-hex farb-hex-blue" aria-hidden="true">↔</span>
               <span class="spieler-text">
                 <span class="spieler-name"></span> <span class="du">(du)</span>
                 <span class="spieler-farbe">Blau · verbindet links und rechts</span>

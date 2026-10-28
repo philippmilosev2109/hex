@@ -55,12 +55,13 @@ function randLinie(punkte, klasse) {
   return svgElement('polyline', { points: alsPunktString(punkte), class: klasse });
 }
 
-// Glänzender Farbverlauf für die Steine (heller Fleck oben links)
-function steinVerlauf(id, hell, mittel, dunkel) {
-  const verlauf = svgElement('radialGradient', { id, cx: '35%', cy: '30%', r: '75%' });
-  verlauf.appendChild(svgElement('stop', { offset: '0%', 'stop-color': hell }));
-  verlauf.appendChild(svgElement('stop', { offset: '45%', 'stop-color': mittel }));
-  verlauf.appendChild(svgElement('stop', { offset: '100%', 'stop-color': dunkel }));
+// Glänzender Farbverlauf für die Steine (heller Fleck oben links).
+// Die Farben selbst stehen in style.css (CSS-Variablen), hier nur die Form.
+function steinVerlauf(farbe) {
+  const verlauf = svgElement('radialGradient', { id: `verlauf-${farbe}`, cx: '35%', cy: '30%', r: '75%' });
+  verlauf.appendChild(svgElement('stop', { offset: '0%', class: 'stop-licht' }));
+  verlauf.appendChild(svgElement('stop', { offset: '45%', class: 'stop-mitte' }));
+  verlauf.appendChild(svgElement('stop', { offset: '100%', class: 'stop-schatten' }));
   return verlauf;
 }
 
@@ -97,8 +98,7 @@ export class Brett {
     });
 
     const defs = svgElement('defs');
-    defs.appendChild(steinVerlauf('verlauf-red', '#ff8a96', '#e2001a', '#8c0010'));
-    defs.appendChild(steinVerlauf('verlauf-blue', '#8fb3ff', '#2563eb', '#123a91'));
+    defs.append(steinVerlauf('red'), steinVerlauf('blue'));
     svg.appendChild(defs);
 
     const felderGruppe = svgElement('g', { class: 'felder' });
@@ -166,15 +166,25 @@ export class Brett {
     }
   }
 
+  // Ein Stein ist eine Gruppe aus Kreis und Richtungszeichen:
+  // Rot bekommt einen senkrechten Strich (verbindet oben ↕ unten),
+  // Blau einen waagrechten (links ↔ rechts). So sind die Farben
+  // auch ohne Farbsehen unterscheidbar.
   neuerStein(r, c, farbe) {
     const m = mittelpunkt(r, c);
-    const stein = svgElement('circle', {
-      cx: m.x.toFixed(1),
-      cy: m.y.toFixed(1),
-      r: STEIN_RADIUS.toFixed(1),
+    const stein = svgElement('g', {
       class: `stein ${farbe}`,
-      fill: `url(#verlauf-${farbe})`,
+      transform: `translate(${m.x.toFixed(1)} ${m.y.toFixed(1)})`,
     });
+    const innen = svgElement('g', { class: 'stein-innen' });   // für Animationen
+    const k = STEIN_RADIUS * 0.42;
+    innen.append(
+      svgElement('circle', { r: STEIN_RADIUS.toFixed(1), fill: `url(#verlauf-${farbe})` }),
+      svgElement('line', farbe === 'red'
+        ? { x1: 0, y1: -k, x2: 0, y2: k, class: 'stein-zeichen' }
+        : { x1: -k, y1: 0, x2: k, y2: 0, class: 'stein-zeichen' }),
+    );
+    stein.appendChild(innen);
     stein.dataset.farbe = farbe;
     this.steinGruppe.appendChild(stein);
     return stein;

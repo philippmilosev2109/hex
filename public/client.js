@@ -32,6 +32,10 @@ const brett = new Brett($('#brett'), (row, col) => {
 function wechsleZu(ansicht) {
   app.ansicht = ansicht;
   zeigeAnsicht(ansicht);
+  // Angemeldeter Name oben rechts (außer auf der Login-Seite)
+  const kopfName = $('#kopf-name');
+  kopfName.textContent = app.name || '';
+  kopfName.hidden = !app.name || ansicht === 'login';
 }
 
 function istMeinZug() {

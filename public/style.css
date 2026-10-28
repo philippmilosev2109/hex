@@ -1,37 +1,69 @@
-/* style.css – Styling für Hex (dunkles Theme nach den Mockups der Spielidee) */
+/* style.css – Styling für Hex
+   Dunkles Theme nach den Mockups der Spielidee. Alle Farben stehen zentral
+   in :root – scripts/contrast.js prüft die Textfarben auf WCAG-AA-Kontrast. */
 
-/* ---------- Farben und Maße zentral ---------- */
+/* ==========================================================
+   1. Farben und Maße
+   ========================================================== */
 :root {
-  --bg: #15171c;
-  --flaeche: #23262f;          /* Karten und Panels */
-  --flaeche-hoch: #2c303b;     /* sekundäre Knöpfe, Hervorhebungen */
-  --rahmen: #3b404d;
-  --eingabe: #111318;
-  --text: #f3f4f6;
-  --text-gedaempft: #a6adbb;
+  /* Flächen (von hinten nach vorne) */
+  --bg: #111318;
+  --bg-licht: #1c2233;          /* weicher Lichtschein oben links */
+  --flaeche: #1e222b;           /* Karten und Panel */
+  --flaeche-oben: #252a35;      /* oberer Teil des Karten-Verlaufs */
+  --flaeche-hoch: #2b313d;      /* Knöpfe, Pillen, Hervorhebungen */
+  --flaeche-tief: #15181e;      /* Eingabefelder, Statusbox */
+  --rahmen: #363c4a;
+  --rahmen-stark: #6f788b;      /* Eingabefelder: mind. 3:1 zur Umgebung */
 
-  --rot: #e2001a;              /* DHBW-Rot */
+  /* Schrift */
+  --text: #f3f5f8;
+  --text-2: #b3bbc8;            /* Nebentexte */
+
+  /* Spielfarben */
+  --rot: #e2001a;               /* DHBW-Rot */
   --rot-dunkel: #b80015;
-  --rot-text: #ff6b7a;         /* rote Schrift auf dunklem Grund */
+  --rot-text: #ff7a87;          /* rote Schrift auf dunklem Grund */
   --blau: #2563eb;
-  --blau-dunkel: #1d4fc4;
-  --blau-text: #8ab0ff;
-  --auf-farbe: #ffffff;        /* Schrift auf roten/blauen Flächen */
+  --blau-dunkel: #1c4fc7;
+  --blau-text: #92b4ff;         /* blaue Schrift auf dunklem Grund */
+  --auf-farbe: #ffffff;         /* Schrift auf roten/blauen Flächen */
 
-  --feld: #3a3f4c;
-  --feld-linie: #252932;
-  --feld-hover-red: #6e2731;
-  --feld-hover-blue: #2a3d72;
+  /* Steine: Glanzverlauf von hell (Lichtfleck) nach dunkel */
+  --stein-rot-licht: #ff919c;
+  --stein-rot-schatten: #7a000e;
+  --stein-blau-licht: #a2c0ff;
+  --stein-blau-schatten: #0f2d74;
+  --stein-zeichen: rgba(255, 255, 255, 0.5);
 
+  /* Brett */
+  --feld: #343a47;
+  --feld-linie: #1b1f27;
+  --feld-hover-red: #5c2630;
+  --feld-hover-blue: #243a6c;
+  --gewinn: #ffffff;
+  --gewinn-linie: rgba(255, 255, 255, 0.85);
+
+  /* Sonstiges */
   --fokus: #ffcc4d;
   --warnung: #8a5a00;
+  --muster: rgba(255, 255, 255, 0.035);
+  --abdunkeln: rgba(10, 12, 16, 0.5);
+  --schatten-farbe: rgba(0, 0, 0, 0.45);
+  --glanz-kante: rgba(255, 255, 255, 0.04);
+  --rot-schein: rgba(226, 0, 26, 0.25);
 
   --radius: 16px;
-  --schatten: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --radius-klein: 10px;
+  --schatten: 0 1px 0 var(--glanz-kante) inset, 0 18px 48px var(--schatten-farbe);
   --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  --schrift: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --kopf-hoehe: 56px;
 }
 
-/* ---------- Grundlagen ---------- */
+/* ==========================================================
+   2. Grundlagen
+   ========================================================== */
 *, *::before, *::after { box-sizing: border-box; }
 
 html { color-scheme: dark; }
@@ -39,16 +71,32 @@ html { color-scheme: dark; }
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background:
-    radial-gradient(1100px 600px at 15% -10%, #232838 0%, transparent 60%),
+    radial-gradient(1100px 620px at 12% -12%, var(--bg-licht) 0%, transparent 62%),
     var(--bg);
   color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 16px/1.5 var(--schrift);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Dezentes Wabenmuster im Hintergrund (Farbe über Variable, Form als Maske) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--muster);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27.71' height='48'%3E%3Cpath d='M13.86 0 27.71 8v16l-13.85 8L0 24V8zM13.86 32v16' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='27.71' height='48'%3E%3Cpath d='M13.86 0 27.71 8v16l-13.85 8L0 24V8zM13.86 32v16' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+  pointer-events: none;
 }
 
 [hidden] { display: none !important; }
 
-h1, h2 { margin: 0; line-height: 1.2; }
+h1, h2 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
 h1:focus, h2:focus { outline: none; }
 
 :focus-visible {
@@ -58,29 +106,94 @@ h1:focus, h2:focus { outline: none; }
 
 .nur-screenreader {
   position: absolute;
-  width: 1px; height: 1px;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
 
+/* ==========================================================
+   3. Kopfzeile und Seitenrahmen
+   ========================================================== */
+.kopfzeile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: var(--kopf-hoehe);
+  padding: 0 24px;
+}
+
+.marke {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.marke-hex {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  background: var(--rot);
+  clip-path: var(--hex);
+  color: var(--auf-farbe);
+  font-size: 0.85rem;
+  letter-spacing: 0;
+}
+
+.kopf-rechts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kopf-name {
+  max-width: 220px;
+  padding: 4px 12px;
+  overflow: hidden;
+  border: 1px solid var(--rahmen);
+  border-radius: 999px;
+  background: var(--flaeche-hoch);
+  color: var(--text);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 main {
-  min-height: 100vh;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  padding: 16px 24px 32px;
 }
 
-.ansicht { width: 100%; }
+/* Sanfter Übergang beim Wechsel der Ansicht */
+.ansicht {
+  width: 100%;
+  animation: einblenden 0.35s ease-out both;
+}
 
-/* ---------- Karten, Knöpfe, Eingaben ---------- */
+@keyframes einblenden {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ==========================================================
+   4. Karten, Knöpfe, Eingaben
+   ========================================================== */
 .karte {
-  background: linear-gradient(180deg, #272b35, var(--flaeche));
+  padding: 32px;
+  background: linear-gradient(180deg, var(--flaeche-oben), var(--flaeche));
   border: 1px solid var(--rahmen);
   border-radius: var(--radius);
   box-shadow: var(--schatten);
-  padding: 32px;
 }
 
 .karte-schmal {
@@ -89,24 +202,24 @@ main {
   text-align: center;
 }
 
-.karte h1 { font-size: 1.6rem; margin-bottom: 6px; }
+.karte h1 { font-size: 1.65rem; margin-bottom: 6px; }
 
 .untertitel {
-  color: var(--text-gedaempft);
   margin: 0 0 20px;
+  color: var(--text-2);
 }
 
 .logo-hex {
-  width: 64px;
-  height: 72px;
-  margin: 0 auto 18px;
   display: grid;
   place-items: center;
-  background: var(--rot);
+  width: 68px;
+  height: 76px;
+  margin: 0 auto 18px;
+  background: linear-gradient(160deg, var(--rot), var(--rot-dunkel));
   clip-path: var(--hex);
   color: var(--auf-farbe);
-  font-size: 1.8rem;
-  font-weight: 700;
+  font-size: 1.9rem;
+  font-weight: 800;
 }
 
 .formular { display: grid; gap: 12px; }
@@ -114,15 +227,16 @@ main {
 input[type="text"] {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid var(--rahmen);
-  border-radius: 10px;
-  background: var(--eingabe);
+  border: 1px solid var(--rahmen-stark);
+  border-radius: var(--radius-klein);
+  background: var(--flaeche-tief);
   color: var(--text);
   font: inherit;
+  transition: border-color 0.15s;
 }
 
-input[type="text"]::placeholder { color: var(--text-gedaempft); opacity: 1; }
-
+input[type="text"]::placeholder { color: var(--text-2); opacity: 1; }
+input[type="text"]:hover { border-color: var(--text-2); }
 input[aria-invalid="true"] { border-color: var(--rot-text); }
 
 .feld-fehler {
@@ -137,25 +251,35 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   width: 100%;
   padding: 12px 16px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-klein);
   font: inherit;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
-  transition: background-color 0.15s, border-color 0.15s, transform 0.1s;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 
 .knopf:active:not(:disabled) { transform: translateY(1px); }
 .knopf:disabled { opacity: 0.55; cursor: not-allowed; }
 
-.knopf-primaer { background: var(--rot); color: var(--auf-farbe); }
+.knopf-primaer {
+  background: linear-gradient(180deg, var(--rot), var(--rot-dunkel));
+  color: var(--auf-farbe);
+  box-shadow: 0 6px 18px var(--rot-schein);
+}
 .knopf-primaer:hover:not(:disabled) { background: var(--rot-dunkel); }
+
+.knopf-blau {
+  background: linear-gradient(180deg, var(--blau), var(--blau-dunkel));
+  color: var(--auf-farbe);
+}
+.knopf-blau:hover:not(:disabled) { background: var(--blau-dunkel); }
 
 .knopf-sekundaer {
   background: var(--flaeche-hoch);
   border-color: var(--rahmen);
   color: var(--text);
 }
-.knopf-sekundaer:hover:not(:disabled) { border-color: var(--text-gedaempft); }
+.knopf-sekundaer:hover:not(:disabled) { border-color: var(--text-2); }
 
 .knopf-gefahr,
 .knopf-gefahr:hover:not(:disabled) {
@@ -168,16 +292,30 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 
 .pille {
   display: inline-block;
+  max-width: 100%;
   margin: 0 0 20px;
   padding: 8px 18px;
+  overflow-wrap: anywhere;
   border: 1px solid var(--rahmen);
   border-radius: 999px;
   background: var(--flaeche-hoch);
-  color: var(--text-gedaempft);
+  color: var(--text-2);
 }
 .pille strong { color: var(--text); }
 
-/* ---------- Wartebildschirm: Ring aus pulsierenden Sechsecken ---------- */
+.regel-kurz {
+  margin: 20px 0 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.regel-farbe { font-weight: 700; }
+.regel-rot { color: var(--rot-text); }
+.regel-blau { color: var(--blau-text); }
+
+/* ==========================================================
+   5. Wartebildschirm: Ring aus pulsierenden Sechsecken
+   ========================================================== */
 .warte-ring {
   position: relative;
   width: 100px;
@@ -211,14 +349,16 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   40% { opacity: 1; }
 }
 
-/* ---------- Spielansicht: Brett links, Panel rechts ---------- */
+/* ==========================================================
+   6. Spielansicht: Brett links, Panel rechts
+   ========================================================== */
 .spiel-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
-  align-items: start;
+  gap: 28px;
+  align-items: center;
   width: 100%;
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
 }
 
@@ -231,12 +371,16 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   display: block;
   width: 100%;
   height: auto;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - var(--kopf-hoehe) - 56px);
+  max-height: calc(100dvh - var(--kopf-hoehe) - 56px);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  overflow: visible;
 }
 
-/* Brett-Elemente im SVG */
+/* --- Brett-Elemente im SVG --- */
+.felder { filter: drop-shadow(0 10px 24px var(--schatten-farbe)); }
+
 .feld {
   fill: var(--feld);
   stroke: var(--feld-linie);
@@ -258,49 +402,63 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 .rand-rot { stroke: var(--rot); }
 .rand-blau { stroke: var(--blau); }
 
-.stein {
-  pointer-events: none;
-  stroke: rgba(0, 0, 0, 0.35);
-  stroke-width: 1;
+/* Farbverläufe der Steine (die <stop>-Elemente kommen aus board.js) */
+#verlauf-red .stop-licht { stop-color: var(--stein-rot-licht); }
+#verlauf-red .stop-mitte { stop-color: var(--rot); }
+#verlauf-red .stop-schatten { stop-color: var(--stein-rot-schatten); }
+#verlauf-blue .stop-licht { stop-color: var(--stein-blau-licht); }
+#verlauf-blue .stop-mitte { stop-color: var(--blau); }
+#verlauf-blue .stop-schatten { stop-color: var(--stein-blau-schatten); }
+
+/* Heller Rand in der eigenen Farbe: hebt den Stein deutlich (≥ 3:1) vom Feld ab */
+.stein { pointer-events: none; }
+.stein circle { stroke-width: 1.4; }
+.stein.red circle { stroke: var(--stein-rot-licht); }
+.stein.blue circle { stroke: var(--stein-blau-licht); }
+
+.stein-zeichen {
+  stroke: var(--stein-zeichen);
+  stroke-width: 2.2;
+  stroke-linecap: round;
 }
 
-.stein.gewinn { stroke: #ffffff; stroke-width: 2.5; }
+.stein.gewinn circle { stroke: var(--gewinn); stroke-width: 2.5; }
 
 .gewinn-linie {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: var(--gewinn-linie);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
 }
 
-/* Panel mit Spielinformationen */
+/* --- Panel mit Spielinformationen --- */
 .panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 24px;
-  background: linear-gradient(180deg, #272b35, var(--flaeche));
+  background: linear-gradient(180deg, var(--flaeche-oben), var(--flaeche));
   border: 1px solid var(--rahmen);
   border-radius: var(--radius);
   box-shadow: var(--schatten);
 }
 
 .panel-titel {
+  color: var(--text-2);
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: var(--text-gedaempft);
 }
 
 .spielerliste {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: grid;
   gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .spieler {
@@ -319,20 +477,27 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 }
 
 .farb-hex {
+  display: grid;
   flex: none;
-  width: 30px;
-  height: 34px;
+  place-items: center;
+  width: 32px;
+  height: 36px;
   clip-path: var(--hex);
+  color: var(--auf-farbe);
+  font-size: 1rem;
+  font-weight: 700;
 }
-.farb-hex-red { background: radial-gradient(circle at 35% 30%, #ff8a96, var(--rot) 45%, #8c0010); }
-.farb-hex-blue { background: radial-gradient(circle at 35% 30%, #8fb3ff, var(--blau) 45%, #123a91); }
+.farb-hex-red { background: radial-gradient(circle at 35% 30%, var(--stein-rot-licht), var(--rot) 45%, var(--stein-rot-schatten)); }
+.farb-hex-blue { background: radial-gradient(circle at 35% 30%, var(--stein-blau-licht), var(--blau) 45%, var(--stein-blau-schatten)); }
 
+.spieler-text { min-width: 0; }
 .spieler-name { font-weight: 700; overflow-wrap: anywhere; }
-.du { color: var(--text-gedaempft); }
+.du { color: var(--text-2); }
+
 .spieler-farbe {
   display: block;
+  color: var(--text-2);
   font-size: 0.85rem;
-  color: var(--text-gedaempft);
 }
 
 .status {
@@ -340,30 +505,36 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   flex-direction: column;
   gap: 2px;
   padding: 14px 16px;
+  background: var(--flaeche-tief);
   border: 2px solid var(--rahmen);
   border-radius: 12px;
-  background: var(--eingabe);
+  transition: border-color 0.2s;
 }
 .status-red { border-color: var(--rot); }
 .status-blue { border-color: var(--blau); }
 .status-titel { font-size: 1.15rem; }
-.status-text { color: var(--text-gedaempft); }
+.status-text { color: var(--text-2); }
 
 .zugzaehler {
   margin: 0;
-  color: var(--text-gedaempft);
+  color: var(--text-2);
   font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Spielende: Karte über dem Brett ---------- */
+/* ==========================================================
+   7. Spielende: Karte über dem Brett
+   ========================================================== */
 .spielende {
   position: absolute;
   inset: 0;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(15, 17, 21, 0.45);
+  background: var(--abdunkeln);
   border-radius: var(--radius);
+  animation: einblenden 0.3s ease-out both;
 }
 
 .ende-karte {
@@ -373,27 +544,29 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 }
 
 .ende-icon {
+  display: grid;
+  place-items: center;
   width: 60px;
   height: 68px;
   margin: 0 auto 14px;
-  display: grid;
-  place-items: center;
-  background: var(--rot);
+  background: linear-gradient(160deg, var(--rot), var(--rot-dunkel));
   clip-path: var(--hex);
   color: var(--auf-farbe);
 }
-.spielende[data-farbe="blue"] .ende-icon { background: var(--blau); }
+.spielende[data-farbe="blue"] .ende-icon { background: linear-gradient(160deg, var(--blau), var(--blau-dunkel)); }
 .spielende[data-farbe=""] .ende-icon { background: var(--flaeche-hoch); }
 
-.ende-karte h2 { font-size: 1.6rem; margin-bottom: 8px; }
+.ende-karte h2 { margin-bottom: 8px; font-size: 1.65rem; }
 .ende-karte .untertitel { margin-bottom: 6px; }
 
 .ende-ergebnis {
   margin: 0 0 18px;
-  font-weight: 600;
+  font-weight: 650;
 }
 
-/* ---------- Meldungen und Verbindungshinweis ---------- */
+/* ==========================================================
+   8. Meldungen und Verbindungshinweis
+   ========================================================== */
 .meldungen {
   position: fixed;
   left: 50%;
@@ -411,8 +584,9 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   background: var(--flaeche-hoch);
   border: 1px solid var(--rahmen);
   border-left: 4px solid var(--blau);
-  border-radius: 10px;
+  border-radius: var(--radius-klein);
   box-shadow: var(--schatten);
+  animation: einblenden 0.25s ease-out both;
 }
 .meldung-fehler { border-left-color: var(--rot); }
 
@@ -429,11 +603,12 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   padding: 10px 16px;
   background: var(--warnung);
   color: var(--auf-farbe);
-  font-weight: 600;
+  font-weight: 650;
   text-align: center;
 }
 
 .verbindung-punkt {
+  flex: none;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -441,18 +616,37 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
   animation: warte-puls 1s ease-in-out infinite;
 }
 
-/* ---------- Kleine Bildschirme: Panel unter das Brett ---------- */
+/* ==========================================================
+   9. Kleinere Bildschirme
+   ========================================================== */
+/* Tablet und Handy: Panel rutscht unter das Brett */
 @media (max-width: 900px) {
-  .spiel-layout { grid-template-columns: minmax(0, 1fr); }
+  .spiel-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .brett svg { max-height: none; }
   .panel { padding: 18px; }
+  main { align-items: flex-start; }
+  /* Das Brett ist hier zu klein für die Karte → Spielende über den ganzen Bildschirm */
+  .spielende {
+    position: fixed;
+    z-index: 40;
+    border-radius: 0;
+  }
 }
 
-@media (max-width: 480px) {
-  main { padding: 16px 8px; }
+@media (max-width: 520px) {
+  :root { --kopf-hoehe: 48px; }
+  .kopfzeile { padding: 0 12px; }
+  main { padding: 8px 8px 24px; }
   .karte { padding: 24px 18px; }
+  .karte h1 { font-size: 1.45rem; }
 }
 
-/* ---------- Weniger Bewegung, wenn gewünscht ---------- */
+/* ==========================================================
+   10. Weniger Bewegung, wenn im System eingestellt
+   ========================================================== */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation: none !important;
