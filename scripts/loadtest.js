@@ -46,6 +46,7 @@ const statistik = {
   spieleGestartet: 0,
   privateSpiele: 0,
   codeFehler: 0,         // erwartete Fehler bei falschen Codes
+  tausche: 0,            // Swap-Regel angewendet
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -212,6 +213,15 @@ class Bot {
     if (this.verhalten === 'chaot') this.chaos();
     if (zustand.turn !== this.farbe) return;
 
+    // Swap-Regel: Blau tauscht manchmal statt zu setzen
+    if (zustand.swapAvailable && this.farbe === BLAU && Math.random() < 0.4) {
+      statistik.tausche++;
+      this.socket.emit('swap');
+      clearTimeout(this.antwortTimer);
+      this.antwortTimer = setTimeout(() => this.ziehe(), 1500);   // falls verworfen: normal ziehen
+      return;
+    }
+
     // Besonderes Verhalten nach ein paar eigenen Zügen
     if (this.eigeneZuege >= this.abbruchNachZuegen) {
       if (this.verhalten === 'aufgeber') return this.socket.emit('resign');
@@ -252,7 +262,7 @@ class Bot {
   // Manipulierter Client: kaputte Daten und Ereignisse im falschen Zustand (maßvoll,
   // damit die eigenen echten Züge nicht vom Rate-Limit verworfen werden)
   chaos() {
-    const ereignisse = ['move', 'join', 'queue', 'cancel', 'gibtEsNicht', 'toString'];
+    const ereignisse = ['move', 'swap', 'join', 'queue', 'cancel', 'gibtEsNicht', 'toString'];
     for (let i = 0; i < 3; i++) {
       this.socket.emit(ereignisse[zufall(0, ereignisse.length - 1)], MUELL[zufall(0, MUELL.length - 1)]);
     }
@@ -378,7 +388,7 @@ async function main() {
 
   const dauer = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`Spiele gestartet: ${statistik.spieleGestartet} (davon privat: ${statistik.privateSpiele}), Züge: ${statistik.zuege}, Dauer: ${dauer} s`);
-  console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}`);
+  console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);

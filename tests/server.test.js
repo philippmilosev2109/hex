@@ -294,6 +294,47 @@ describe('Private Spiele: Ablauf des Codes', () => {
   });
 });
 
+describe('Swap-Regel', () => {
+  test('Blau tauscht nach dem ersten roten Zug: Stein gespiegelt, Rot ist wieder dran', async () => {
+    const { rot, blau } = await spielStarten();
+    const nachRot = await zug(rot, blau, 2, 7);
+    expect(nachRot.swapAvailable).toBe(true);
+
+    blau.emit('swap');
+    const [zustand] = await Promise.all([blau.warteAuf('state'), rot.warteAuf('state')]);
+    expect(zustand.board[2][7]).toBeNull();
+    expect(zustand.board[7][2]).toBe('blue');
+    expect(zustand.turn).toBe('red');
+    expect(zustand.swapAvailable).toBe(false);
+    expect(zustand.moves[1]).toEqual({ color: 'blue', row: 7, col: 2, swap: true });
+
+    // Danach normal weiter – das alte Feld ist wieder frei
+    const weiter = await zug(rot, blau, 2, 7);
+    expect(weiter.board[2][7]).toBe('red');
+  });
+
+  test('Tauschen ist nur einmal und nur für Blau direkt nach Rots erstem Zug erlaubt', async () => {
+    const { rot, blau } = await spielStarten();
+    blau.emit('swap');                                      // vor dem ersten Zug
+    await blau.warteAuf('invalid');
+    await zug(rot, blau, 5, 5);
+    rot.emit('swap');                                       // Rot darf nie tauschen
+    await rot.warteAuf('invalid');
+    await zug(blau, rot, 1, 1);
+    blau.alle('state');
+    blau.emit('swap');                                      // zu spät
+    expect((await blau.warteAuf('invalid')).reason).toMatch(/nicht erlaubt/);
+    expect(blau.hat('state')).toBe(false);
+  });
+
+  test('ohne Spiel wird swap ignoriert', async () => {
+    const client = await anmelden('Solo');
+    client.emit('swap');
+    await pause(100);
+    expect(client.hat('invalid')).toBe(false);
+  });
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();

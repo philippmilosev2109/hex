@@ -248,11 +248,20 @@ socket.on('gameStart', daten => {
 });
 
 socket.on('state', zustand => {
+  const vorher = app.zustand;
   app.zustand = zustand;
   app.zugGesendet = false;
   brett.zeigeZustand(zustand.board);
   setzeUhren(zustand.clock, zustand.turn, app.laeuft && zustand.turn !== null);
   aktualisiereStatus();
+
+  // Wurde gerade getauscht? Dann beide Spieler kurz informieren.
+  const letzter = zustand.moves[zustand.moves.length - 1];
+  if (letzter?.swap && vorher && vorher.moves.length < zustand.moves.length) {
+    meldung(letzter.color === app.farbe
+      ? 'Du hast getauscht – jetzt ist Rot wieder am Zug.'
+      : `${app.spieler.blue} hat getauscht: Dein erster Stein ist jetzt ein blauer Stein.`);
+  }
 });
 
 // Ungültiger Zug: Anzeige bleibt unverändert, nur ein Hinweis
@@ -288,6 +297,13 @@ function aktualisiereStatus() {
     $(`#spieler-${farbe}`).classList.toggle('am-zug', app.laeuft && zustand?.turn === farbe);
   }
 
+  // Swap-Regel: Blau sieht den Knopf, alle anderen einen Hinweis
+  const tauschMoeglich = app.laeuft && Boolean(zustand?.swapAvailable);
+  const ichDarfTauschen = tauschMoeglich && istMeinZug() && app.farbe === 'blue';
+  $('#tausch-box').hidden = !ichDarfTauschen;
+  $('#tausch-hinweis').hidden = !tauschMoeglich || ichDarfTauschen;
+  if (!ichDarfTauschen) brett.versteckeTauschVorschau();
+
   if (zustand) {
     const steine = { red: 0, blue: 0 };
     for (const zeile of zustand.board) for (const feld of zeile) if (feld) steine[feld]++;
@@ -298,6 +314,22 @@ function aktualisiereStatus() {
     $('#zugzaehler').textContent = `Zug ${zugNummer} · ${steinText}`;
   }
 }
+
+// Tauschen: wie ein Zug – erst wenn der Server den neuen Zustand schickt, ändert sich das Brett
+$('#knopf-tauschen').addEventListener('click', () => {
+  if (!istMeinZug() || !app.zustand.swapAvailable) return;
+  app.zugGesendet = true;
+  aktualisiereStatus();
+  socket.emit('swap');
+});
+
+// Vorschau beim Zeigen auf den Knopf (Maus oder Tastatur-Fokus)
+function zeigeTauschVorschau() {
+  const erster = app.zustand?.moves[0];
+  if (erster && app.zustand.swapAvailable) brett.zeigeTauschVorschau(erster.row, erster.col);
+}
+for (const ereignis of ['mouseenter', 'focus']) $('#knopf-tauschen').addEventListener(ereignis, zeigeTauschVorschau);
+for (const ereignis of ['mouseleave', 'blur']) $('#knopf-tauschen').addEventListener(ereignis, () => brett.versteckeTauschVorschau());
 
 // Aufgeben mit Sicherheitsabfrage: erster Klick fragt nach, zweiter gibt auf
 let aufgebenTimer = null;

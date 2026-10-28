@@ -40,6 +40,8 @@ const PAARE = [
   ['--text', '--uhr-knapp', TEXT, 'Schrift auf Puls-Hintergrund'],
   ['--blau-text', '--flaeche', TEXT, '"Blau ↔" im Regeltext'],
   ['--blau-text', '--flaeche-oben', TEXT, '"Blau ↔" im Regeltext (oben)'],
+  ['--blau-text', '--flaeche-tief', TEXT, '"Swap-Regel:" im Erklärtext'],
+  ['--blau', '--flaeche-tief', GRAFIK, 'Blauer Rahmen der Swap-Box'],
   // Weiße Schrift auf farbigen Flächen
   ['--auf-farbe', '--rot', TEXT, 'Primärknopf, Logo (heller Teil)'],
   ['--auf-farbe', '--rot-dunkel', TEXT, 'Primärknopf (dunkler Teil, Hover)'],

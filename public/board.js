@@ -71,6 +71,7 @@ export class Brett {
   constructor(container, onFeldKlick) {
     this.onFeldKlick = onFeldKlick;
     this.aktiv = false;
+    this.vorschau = null;   // halbtransparenter Vorschau-Stein
     this.felder = [];   // Polygone [r][c]
     this.steine = [];   // Stein-Elemente [r][c] oder null
     this.svg = this.zeichne();
@@ -154,6 +155,7 @@ export class Brett {
 
   // Steine an den Zustand vom Server anpassen (board[r][c] = null | 'red' | 'blue')
   zeigeZustand(board) {
+    this.versteckeTauschVorschau();
     for (let r = 0; r < GROESSE; r++) {
       for (let c = 0; c < GROESSE; c++) {
         const soll = board[r][c];
@@ -186,8 +188,40 @@ export class Brett {
     );
     stein.appendChild(innen);
     stein.dataset.farbe = farbe;
+    stein.dataset.r = r;
+    stein.dataset.c = c;
     this.steinGruppe.appendChild(stein);
     return stein;
+  }
+
+  // Halbtransparenter Stein als Vorschau (z. B. wohin der Tausch den Stein setzt)
+  zeigeVorschau(row, col, farbe) {
+    this.versteckeVorschau();
+    const m = mittelpunkt(row, col);
+    this.vorschau = svgElement('circle', {
+      cx: m.x.toFixed(1),
+      cy: m.y.toFixed(1),
+      r: STEIN_RADIUS.toFixed(1),
+      class: 'vorschau',
+      fill: `url(#verlauf-${farbe})`,
+    });
+    this.steinGruppe.appendChild(this.vorschau);
+  }
+
+  versteckeVorschau() {
+    if (this.vorschau) this.vorschau.remove();
+    this.vorschau = null;
+  }
+
+  // Swap-Vorschau: der rote Stein wird blass, am gespiegelten Feld erscheint Blau
+  zeigeTauschVorschau(row, col) {
+    this.steine[row][col]?.classList.add('wird-getauscht');
+    this.zeigeVorschau(col, row, 'blue');
+  }
+
+  versteckeTauschVorschau() {
+    this.steinGruppe.querySelectorAll('.wird-getauscht').forEach(s => s.classList.remove('wird-getauscht'));
+    this.versteckeVorschau();
   }
 
   // Gewinnpfad hervorheben: Linie durch die Steine + leuchtende Steine
@@ -204,6 +238,7 @@ export class Brett {
 
   // Leeres Brett für ein neues Spiel
   zuruecksetzen() {
+    this.vorschau = null;
     this.steinGruppe.replaceChildren();
     this.pfadGruppe.replaceChildren();
     for (let r = 0; r < GROESSE; r++) {

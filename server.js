@@ -142,6 +142,7 @@ function erstelleServer(optionen = {}) {
       turn: spiel.beendet ? null : spiel.amZug,
       moves: spiel.zuege.map(z => ({ color: z.farbe, row: z.row, col: z.col, swap: z.tausch })),
       clock: uhrenVon(spiel),
+      swapAvailable: spiel.swapMoeglich(),   // darf Blau gerade tauschen?
     };
   }
 
@@ -408,6 +409,19 @@ function erstelleServer(optionen = {}) {
         return;
       }
       const ergebnis = partie.spiel.setzeStein(sp.farbe, daten.row, daten.col, Date.now());
+      nachAktion(partie, ergebnis);
+    });
+
+    // Swap-Regel: Blau übernimmt den ersten roten Stein (gespiegelt)
+    an('swap', () => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IM_SPIEL) return;
+      const partie = sp.partie;
+      nachAktion(partie, partie.spiel.tausche(sp.farbe, Date.now()));
+    });
+
+    // Gemeinsamer Abschluss für Zug und Tausch
+    function nachAktion(partie, ergebnis) {
       if (!ergebnis.ok) {
         socket.emit('invalid', { reason: ergebnis.grund });   // nur an den Absender
         if (partie.spiel.beendet) {                           // Zeit war schon abgelaufen
@@ -419,7 +433,7 @@ function erstelleServer(optionen = {}) {
       sendeZustand(partie);                                   // an beide Spieler
       if (partie.spiel.beendet) beendePartie(partie);
       else planeUhr(partie);
-    });
+    }
 
     // Aufgeben: Der Gegner gewinnt sofort
     an('resign', () => {

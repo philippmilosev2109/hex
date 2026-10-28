@@ -201,6 +201,24 @@ async function privatesSpiel(browser, url, groesse) {
   for (const seite of [a, b]) {
     if (await seite.isHidden('#privat-abzeichen')) throw new Error('Abzeichen "Privat" fehlt');
   }
+
+  // Swap-Regel: Rot setzt auf (2,7), Blau tauscht → blauer Stein auf (7,2)
+  const aIstRot = await a.evaluate(() => !document.querySelector('#spieler-red .du').hidden);
+  const rot = aIstRot ? a : b;
+  const blau = aIstRot ? b : a;
+  await zug(rot, blau, 2, 7, 1);
+  await blau.waitForSelector('#tausch-box:not([hidden])');
+  if (await rot.isHidden('#tausch-hinweis')) throw new Error('Rot sieht keinen Swap-Hinweis');
+  await blau.hover('#knopf-tauschen');
+  await blau.waitForSelector('.vorschau');
+  await foto(blau, `${groesse.name}-3c-tausch-vorschau`);
+  await blau.click('#knopf-tauschen');
+  for (const seite of [rot, blau]) {
+    await seite.waitForSelector('.stein.blue[data-r="7"][data-c="2"]');
+    if (await seite.locator('.steine .stein').count() !== 1) throw new Error('Nach dem Tausch liegt nicht genau ein Stein');
+  }
+  await blau.waitForSelector('#tausch-box', { state: 'hidden' });
+
   await a.context().close();
   await b.context().close();
 }

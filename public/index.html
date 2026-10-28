@@ -177,6 +177,21 @@
             <strong id="status-titel" class="status-titel"></strong>
             <span id="status-text" class="status-text"></span>
           </div>
+
+          <!-- Swap-Regel: nur für Blau direkt nach dem ersten roten Zug -->
+          <div id="tausch-box" class="tausch-box" hidden>
+            <button id="knopf-tauschen" type="button" class="knopf knopf-blau" aria-describedby="tausch-info">
+              Tauschen
+            </button>
+            <p id="tausch-info" class="tausch-info">
+              <strong>Swap-Regel:</strong> Statt selbst zu setzen, darfst du den ersten roten Stein
+              übernehmen – gespiegelt an der langen Diagonale und in Blau. Danach ist Rot wieder dran.
+              Das gleicht den Vorteil des ersten Zugs aus.
+            </p>
+          </div>
+          <p id="tausch-hinweis" class="tausch-hinweis" hidden>
+            Blau darf jetzt einmalig tauschen (Swap-Regel) oder normal setzen.
+          </p>
           <p id="zugzaehler" class="zugzaehler"></p>
           <button id="knopf-aufgeben" type="button" class="knopf knopf-sekundaer">Aufgeben</button>
         </aside>

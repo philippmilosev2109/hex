@@ -524,7 +524,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
    ========================================================== */
 .spiel-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 28px;
   align-items: center;
   width: 100%;
@@ -593,6 +593,15 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 .stein.gewinn circle { stroke: var(--gewinn); stroke-width: 2.5; }
+
+/* Halbtransparenter Vorschau-Stein (Swap-Vorschau, später auch Hover) */
+.vorschau {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Roter Stein, der beim Tauschen verschwinden würde */
+.stein.wird-getauscht { opacity: 0.35; }
 
 .gewinn-linie {
   fill: none;
@@ -682,7 +691,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 /* Schachuhr neben dem Namen */
 .uhr {
   flex: none;
-  min-width: 70px;
+  min-width: 66px;
   padding: 4px 10px;
   background: var(--flaeche-tief);
   border: 1px solid var(--rahmen);
@@ -733,6 +742,25 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 .status-blue { border-color: var(--blau); }
 .status-titel { font-size: 1.15rem; }
 .status-text { color: var(--text-2); }
+
+/* Swap-Regel */
+.tausch-box {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--flaeche-tief);
+  border: 1px solid var(--blau);
+  border-radius: 12px;
+  animation: einblenden 0.3s ease-out both;
+}
+
+.tausch-info,
+.tausch-hinweis {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+.tausch-info strong { color: var(--blau-text); }
 
 .zugzaehler {
   margin: 0;
