@@ -47,6 +47,61 @@
       </div>
     </section>
 
+    <!-- Lobby: Spielart wählen -->
+    <section id="ansicht-lobby" class="ansicht" aria-labelledby="lobby-titel" hidden>
+      <div class="lobby">
+        <div class="karte lobby-haupt">
+          <p class="lobby-live">
+            <span class="live-punkt" aria-hidden="true"></span>
+            <span id="lobby-online">– Spieler online</span> · <span id="lobby-spiele">– laufende Spiele</span>
+          </p>
+          <h1 id="lobby-titel" tabindex="-1" data-fokus>Hallo, <span id="lobby-name"></span>!</h1>
+          <p class="untertitel">Wie möchtest du spielen?</p>
+
+          <div class="optionen">
+            <button id="knopf-schnell" type="button" class="option option-primaer">
+              <span class="option-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+              </span>
+              <span class="option-text">
+                <strong>Schnelles Spiel</strong>
+                <span>Gegen den nächsten freien Spieler</span>
+              </span>
+            </button>
+
+            <button id="knopf-privat" type="button" class="option" disabled>
+              <span class="option-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+              </span>
+              <span class="option-text">
+                <strong>Privates Spiel erstellen</strong>
+                <span>Code erzeugen und einem Freund geben</span>
+              </span>
+            </button>
+
+            <form id="beitreten-form" class="option option-formular" novalidate>
+              <span class="option-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
+              </span>
+              <span class="option-text">
+                <label for="code-eingabe"><strong>Privatem Spiel beitreten</strong></label>
+                <span>Code von deinem Freund eingeben</span>
+                <span class="code-zeile">
+                  <input id="code-eingabe" name="code" type="text" maxlength="4" autocomplete="off"
+                         autocapitalize="characters" spellcheck="false" placeholder="z. B. K7QX"
+                         aria-describedby="code-fehler" disabled>
+                  <button id="knopf-beitreten" type="submit" class="knopf knopf-blau" disabled>Beitreten</button>
+                </span>
+                <span id="code-fehler" class="feld-fehler" hidden></span>
+              </span>
+            </form>
+          </div>
+
+          <button id="knopf-lobby-abmelden" type="button" class="knopf-text">Abmelden</button>
+        </div>
+      </div>
+    </section>
+
     <!-- 2. Warten auf den Gegner -->
     <section id="ansicht-warten" class="ansicht" aria-labelledby="warten-titel" hidden>
       <div class="karte karte-schmal">
@@ -80,7 +135,8 @@
               <p id="ende-ergebnis" class="ende-ergebnis"></p>
               <div class="knopf-reihe">
                 <button id="knopf-nochmal" type="button" class="knopf knopf-primaer">Nochmal spielen</button>
-                <button id="knopf-abmelden" type="button" class="knopf knopf-sekundaer">Abmelden</button>
+                <button id="knopf-zur-lobby" type="button" class="knopf knopf-sekundaer">Zur Lobby</button>
+                <button id="knopf-abmelden" type="button" class="knopf-text">Abmelden</button>
               </div>
             </div>
           </div>

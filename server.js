@@ -26,6 +26,7 @@ const IM_SPIEL = 'imSpiel';      // spielt gerade
 function erstelleServer(optionen = {}) {
   const einstellungen = {
     maxEventsProSekunde: 20,     // Rate-Limit pro Socket
+    lobbyVerzoegerungMs: 100,    // Lobby-Updates werden kurz gesammelt
     ...optionen,
   };
 
@@ -43,6 +44,7 @@ function erstelleServer(optionen = {}) {
   const aktiveTimer = new Set();   // alle laufenden setTimeout (zur Kontrolle)
   let naechsteSpielId = 1;
   let fehlerAnzahl = 0;
+  let lobbyTimer = null;
 
   // ---------- Hilfsfunktionen ----------
 
@@ -89,6 +91,26 @@ function erstelleServer(optionen = {}) {
       .trim();
     if (sauber.length < 1 || sauber.length > NAME_MAX) return null;
     return sauber;
+  }
+
+  // ---------- Lobby ----------
+
+  // Was alle angemeldeten Spieler in der Lobby live sehen
+  function lobbyDaten() {
+    return {
+      online: spielerListe.size,
+      games: partien.size,
+    };
+  }
+
+  // Lobby-Update an alle Angemeldeten (Raum "lobby"). Viele Änderungen kurz
+  // hintereinander werden zu einer Nachricht gebündelt.
+  function lobbyAktualisieren() {
+    if (lobbyTimer) return;
+    lobbyTimer = starteTimer(einstellungen.lobbyVerzoegerungMs, 'lobby', () => {
+      lobbyTimer = null;
+      io.to('lobby').emit('lobby', lobbyDaten());
+    });
   }
 
   // ---------- Spielablauf ----------
@@ -139,6 +161,7 @@ function erstelleServer(optionen = {}) {
       });
     }
     sendeZustand(partie);
+    lobbyAktualisieren();
   }
 
   // Spielende an alle im Raum melden und aufräumen
@@ -159,6 +182,7 @@ function erstelleServer(optionen = {}) {
       if (sp.socket) sp.socket.leave(partie.raum);
     }
     partien.delete(partie.id);
+    lobbyAktualisieren();
   }
 
   // Warteschlange: Sobald zwei Spieler warten, startet ein Spiel.
@@ -229,7 +253,10 @@ function erstelleServer(optionen = {}) {
       };
       spielerListe.set(sp.id, sp);
       socket.data.spieler = sp;
+      socket.join('lobby');
       socket.emit('joined', { name });
+      socket.emit('lobby', lobbyDaten());
+      lobbyAktualisieren();
     });
 
     // In die Warteschlange ("Spielen" / "Nochmal spielen")
@@ -279,7 +306,9 @@ function erstelleServer(optionen = {}) {
       verlasseAktivitaet(sp, 'disconnect');
       spielerListe.delete(sp.id);
       socket.data.spieler = null;
+      socket.leave('lobby');
       socket.emit('loggedOut');
+      lobbyAktualisieren();
     });
 
     // Verbindung weg (Tab zu, WLAN weg …): vollständig aufräumen
@@ -289,6 +318,7 @@ function erstelleServer(optionen = {}) {
       verlasseAktivitaet(sp, 'disconnect');
       sp.socket = null;
       spielerListe.delete(sp.id);
+      lobbyAktualisieren();
     }));
   });
 
@@ -309,6 +339,7 @@ function erstelleServer(optionen = {}) {
   function stoppe() {
     for (const timer of aktiveTimer) clearTimeout(timer);
     aktiveTimer.clear();
+    lobbyTimer = null;
     return new Promise(resolve => io.close(() => resolve()));
   }
 

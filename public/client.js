@@ -66,21 +66,46 @@ $('#login-form').addEventListener('submit', event => {
   }
   zeigeNamensFehler(null);
   $('#knopf-spielen').disabled = true;
-  app.nachJoin = 'queue';
+  app.nachJoin = null;
   socket.emit('join', { name: pruefung.name });
 });
 
+// Angemeldet → in die Lobby (oder nach einem Verbindungsabbruch direkt weiter warten)
 socket.on('joined', ({ name }) => {
   app.name = name;
   $('#knopf-spielen').disabled = false;
-  if (app.nachJoin === 'queue') socket.emit('queue');
+  $('#lobby-name').textContent = name;
+  const naechstes = app.nachJoin;
   app.nachJoin = null;
+  if (naechstes === 'queue') socket.emit('queue');
+  else if (app.ansicht !== 'spiel') wechsleZu('lobby');
 });
 
 socket.on('joinError', ({ reason }) => {
   $('#knopf-spielen').disabled = false;
   zeigeNamensFehler(reason);
 });
+
+socket.on('loggedOut', () => {
+  app.name = null;
+  app.laeuft = false;
+  wechsleZu('login');
+});
+
+// ---------- Lobby ----------
+
+function mehrzahl(anzahl, einzahl, mehrzahlForm) {
+  return `${anzahl} ${anzahl === 1 ? einzahl : mehrzahlForm}`;
+}
+
+// Live-Anzeige "X Spieler online · Y laufende Spiele"
+socket.on('lobby', daten => {
+  $('#lobby-online').textContent = `${mehrzahl(daten.online, 'Spieler', 'Spieler')} online`;
+  $('#lobby-spiele').textContent = mehrzahl(daten.games, 'laufendes Spiel', 'laufende Spiele');
+});
+
+$('#knopf-schnell').addEventListener('click', () => socket.emit('queue'));
+$('#knopf-lobby-abmelden').addEventListener('click', () => socket.emit('logout'));
 
 // ---------- 2. Warten ----------
 
@@ -89,14 +114,9 @@ socket.on('waiting', () => {
   wechsleZu('warten');
 });
 
-// Abbrechen: aus der Warteschlange und zurück zum Login
-$('#knopf-abbrechen').addEventListener('click', () => socket.emit('logout'));
-
-socket.on('loggedOut', () => {
-  app.name = null;
-  app.laeuft = false;
-  wechsleZu('login');
-});
+// Abbrechen: aus der Warteschlange zurück in die Lobby
+$('#knopf-abbrechen').addEventListener('click', () => socket.emit('cancel'));
+socket.on('cancelled', () => wechsleZu('lobby'));
 
 // ---------- 3. Spielen ----------
 
@@ -238,10 +258,11 @@ function zeigeEndeKarte(titel, text, ergebnis, farbe) {
   $('#ende-titel').focus({ preventScroll: true });
 }
 
-// 5. Erneut spielen: zurück in die Warteschlange oder abmelden
+// 5. Erneut spielen: zurück in die Warteschlange, in die Lobby oder abmelden
 $('#knopf-nochmal').addEventListener('click', () => {
   if (app.name) socket.emit('queue');
 });
+$('#knopf-zur-lobby').addEventListener('click', () => wechsleZu('lobby'));
 $('#knopf-abmelden').addEventListener('click', () => socket.emit('logout'));
 
 // ---------- Verbindung ----------

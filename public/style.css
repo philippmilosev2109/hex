@@ -45,6 +45,8 @@
   --gewinn-linie: rgba(255, 255, 255, 0.85);
 
   /* Sonstiges */
+  --online: #3ddc84;            /* Live-Punkt in der Lobby */
+  --online-schein: rgba(61, 220, 132, 0.18);
   --fokus: #ffcc4d;
   --warnung: #8a5a00;
   --muster: rgba(255, 255, 255, 0.035);
@@ -290,6 +292,23 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 
 .knopf-reihe { display: grid; gap: 10px; }
 
+/* Unauffälliger Knopf, der wie ein Link aussieht (z. B. "Abmelden") */
+.knopf-text {
+  justify-self: center;
+  margin: 4px auto 0;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.95rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.knopf-text:hover { color: var(--text); }
+
 .pille {
   display: inline-block;
   max-width: 100%;
@@ -312,6 +331,114 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
 .regel-farbe { font-weight: 700; }
 .regel-rot { color: var(--rot-text); }
 .regel-blau { color: var(--blau-text); }
+
+/* ==========================================================
+   4b. Lobby
+   ========================================================== */
+.lobby {
+  display: grid;
+  gap: 24px;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.lobby-haupt { display: grid; }
+.lobby-haupt h1 { overflow-wrap: anywhere; }
+
+.lobby-live {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 14px;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
+
+.live-punkt {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--online);
+  box-shadow: 0 0 0 4px var(--online-schein);
+}
+
+.optionen {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 16px;
+  background: var(--flaeche-hoch);
+  border: 1px solid var(--rahmen);
+  border-radius: 14px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+button.option { cursor: pointer; }
+button.option:hover:not(:disabled) {
+  border-color: var(--text-2);
+  transform: translateY(-1px);
+  box-shadow: var(--schatten);
+}
+button.option:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.option-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 46px;
+  height: 52px;
+  background: var(--flaeche-tief);
+  clip-path: var(--hex);
+  color: var(--text);
+}
+
+.option-primaer .option-icon {
+  background: linear-gradient(160deg, var(--rot), var(--rot-dunkel));
+  color: var(--auf-farbe);
+}
+
+.option-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.option-text strong { font-size: 1.05rem; }
+.option-text > span { color: var(--text-2); font-size: 0.9rem; }
+
+.option-formular { align-items: flex-start; }
+.option-formular .option-icon { margin-top: 2px; }
+
+.code-zeile {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.code-zeile input {
+  min-width: 0;
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+}
+.code-zeile input::placeholder { letter-spacing: normal; font-weight: 400; text-transform: none; }
+
+.code-zeile .knopf {
+  width: auto;
+  flex: none;
+}
 
 /* ==========================================================
    5. Wartebildschirm: Ring aus pulsierenden Sechsecken

@@ -44,6 +44,14 @@ async function spielStarten(nameA = 'Anna', nameB = 'Ben') {
   return { a, b, startA, startB, zustandA, rot, blau };
 }
 
+// Wartet auf das nächste Lobby-Update, das die Bedingung erfüllt
+async function warteAufLobby(client, bedingung) {
+  for (;;) {
+    const lobby = await client.warteAuf('lobby');
+    if (bedingung(lobby)) return lobby;
+  }
+}
+
 // Zug senden und warten, bis BEIDE Spieler den neuen Zustand bekommen haben
 async function zug(amZug, gegner, row, col) {
   amZug.emit('move', { row, col });
@@ -76,6 +84,43 @@ describe('Anmelden', () => {
     await pause(100);
     expect(client.hat('joined')).toBe(false);
     expect(server.diagnose().spieler).toBe(1);
+  });
+});
+
+describe('Lobby', () => {
+  test('Live-Anzeige: Spieler online und laufende Spiele', async () => {
+    const a = await anmelden('A');
+    expect(await a.warteAuf('lobby')).toMatchObject({ online: 1, games: 0 });
+
+    const b = await anmelden('B');
+    await warteAufLobby(a, lobby => lobby.online === 2);
+
+    a.emit('queue');
+    b.emit('queue');
+    await warteAufLobby(a, lobby => lobby.games === 1);
+
+    b.trennen();
+    await warteAufLobby(a, lobby => lobby.online === 1 && lobby.games === 0);
+  });
+
+  test('Gäste ohne Namen bekommen keine Lobby-Daten', async () => {
+    const gast = await neuerClient();
+    await anmelden('A');
+    await pause(250);
+    expect(gast.hat('lobby')).toBe(false);
+  });
+
+  test('nach "Abbrechen" ist man wieder frei für ein neues Spiel', async () => {
+    const a = await anmelden('A');
+    a.emit('queue');
+    await a.warteAuf('waiting');
+    a.emit('cancel');
+    await a.warteAuf('cancelled');
+    a.emit('queue');
+    await a.warteAuf('waiting');
+    const b = await anmelden('B');
+    b.emit('queue');
+    await Promise.all([a.warteAuf('gameStart'), b.warteAuf('gameStart')]);
   });
 });
 
@@ -302,7 +347,7 @@ describe('Robustheit', () => {
     wartend.emit('queue');
     await wartend.warteAuf('waiting');
     clients.forEach(c => c.trennen());
-    await warteBis(() => server.diagnose().spieler === 0);
+    await warteBis(() => server.diagnose().spieler === 0 && server.diagnose().timer === 0);
     expect(server.diagnose()).toEqual({
       spieler: 0, warteschlange: 0, partien: 0, raeume: 0, timer: 0, fehler: 0,
     });

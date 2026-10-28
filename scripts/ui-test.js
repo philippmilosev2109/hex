@@ -33,7 +33,8 @@ async function neueSeite(browser, url, groesse, wer) {
 }
 
 async function foto(seite, name) {
-  await seite.screenshot({ path: path.join(ORDNER, `${name}.png`) });
+  // animations: 'disabled' spult Einblend-Animationen bis zum Ende vor
+  await seite.screenshot({ path: path.join(ORDNER, `${name}.png`), animations: 'disabled' });
 }
 
 // Kein horizontales Scrollen erlaubt
@@ -42,9 +43,17 @@ async function pruefeBreite(seite, wo) {
   if (zuBreit) throw new Error(`Horizontales Scrollen auf ${wo}`);
 }
 
-async function anmelden(seite, name) {
+// Name eingeben → Lobby → "Schnelles Spiel"
+async function anmelden(seite, name, { foto: fotoName } = {}) {
   await seite.fill('#name-eingabe', name);
   await seite.click('#knopf-spielen');
+  await seite.waitForSelector('#ansicht-lobby:not([hidden])');
+  await seite.waitForFunction(() => /\d/.test(document.querySelector('#lobby-online').textContent));
+  if (fotoName) {
+    await foto(seite, fotoName);
+    await pruefeBreite(seite, 'Lobby');
+  }
+  await seite.click('#knopf-schnell');
 }
 
 // Wartet, bis die Spielansicht eines NEUEN Spiels sichtbar ist (Overlay zu, Status gesetzt)
@@ -79,8 +88,8 @@ async function durchlauf(browser, url, groesse) {
   await a.click('#knopf-spielen');
   await a.waitForSelector('#name-fehler:not([hidden])');
 
-  // 2. Warten
-  await anmelden(a, 'Milo');
+  // Lobby und 2. Warten
+  await anmelden(a, 'Milo', { foto: `${groesse.name}-1b-lobby` });
   await a.waitForSelector('#ansicht-warten:not([hidden])');
   await foto(a, `${groesse.name}-2-warten`);
   await pruefeBreite(a, 'Warten');
