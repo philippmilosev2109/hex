@@ -55,7 +55,7 @@ baut, gewinnt. Ein Unentschieden ist unmöglich.
 
 - Dunkles Theme nach den Mockups, alle Farben zentral als CSS-Variablen in `:root`
 - **Kontrast nach WCAG AA** für alle Texte (≥ 4,5 : 1) und Grafiken (≥ 3 : 1) – automatisch geprüft mit `npm run contrast`
-- Rot und Blau nie nur über die Farbe: Steine tragen ein Richtungszeichen (Rot ↕, Blau ↔), Texte nennen die Farbe
+- Rot und Blau nie nur über die Farbe: Steine tragen einen Richtungsstrich (Rot senkrecht, Blau waagerecht; in der Legende Rot ↕, Blau ↔), Texte nennen die Farbe
 - Komplett per **Tastatur** bedienbar – auch das Brett (Pfeiltasten + Enter, Ansage für Screenreader)
 - Sichtbare Fokus-Rahmen, `prefers-reduced-motion` schaltet Animationen ab
 - Responsive: ab 1024 × 768 optimal, auf Tablet/Handy ab 375 px spielbar (Panel unter dem Brett, Touch ohne Hover)
@@ -73,7 +73,8 @@ baut, gewinnt. Ein Unentschieden ist unmöglich.
 
 ## Installation und Start
 
-Voraussetzung: [Node.js](https://nodejs.org/) ab Version 18 (getestet mit Node 24).
+Voraussetzung: [Node.js](https://nodejs.org/) ab Version 20 (getestet mit Node 24).
+Das Spiel selbst (`npm start`) läuft auch mit Node 18; die Testwerkzeuge Jest und Playwright brauchen Node 20.
 
 ```bash
 npm install
@@ -107,14 +108,15 @@ Beispiel (Linux/macOS): `PORT=8080 HEX_ZEIT_MS=60000 npm start`
 ## Spielen im Netzwerk
 
 1. Auf einem Rechner `npm start` ausführen.
-2. Die ausgegebene Adresse `http://<IP-Adresse>:3000` an die Mitspieler weitergeben.
+2. Die ausgegebene Adresse `http://<IP-Adresse>:3000` an die Mitspieler weitergeben
+   (mit anderem `PORT` entsprechend dessen Nummer statt 3000).
    Alle Geräte müssen im selben Netz sein (z. B. gleiches WLAN).
 3. Jede Person öffnet die Adresse im eigenen Browser, gibt einen Namen ein und wählt in der Lobby
    **Schnelles Spiel** – oder erstellt ein **privates Spiel** und gibt den 4-stelligen Code weiter.
 
 Falls die Verbindung nicht klappt, blockiert meist die Firewall den Port:
 
-- **Ubuntu:** `sudo ufw allow 3000/tcp`
+- **Ubuntu:** `sudo ufw allow 3000/tcp` (bzw. den eingestellten `PORT`)
 - **Windows:** beim ersten Start „Zugriff zulassen“ für Node.js bestätigen (privates Netzwerk)
 
 Zum Ausprobieren auf einem einzigen Rechner reichen zwei Browserfenster (z. B. ein normales und ein privates Fenster).
@@ -161,6 +163,7 @@ flowchart LR
     C[client.js] --> B[board.js]
     C --> U[ui.js]
     C --> S[sound.js]
+    C --> E[effekte.js]
   end
   subgraph Server["Node.js-Server"]
     SV[server.js] --> G[game.js]
@@ -187,16 +190,22 @@ stateDiagram-v2
   idle --> zuschauend: spectate
   zuschauend --> idle: stopSpectating / gameOver
   idle --> [*]: logout / disconnect
+  wartend --> [*]: logout / disconnect
+  zuschauend --> [*]: logout / disconnect
+  imSpiel --> [*]: logout / Gnadenfrist abgelaufen
 ```
 
-Bricht die Verbindung **im Spiel** ab, bleibt der Spieler 30 Sekunden im Zustand `imSpiel` (Gnadenfrist).
-In allen anderen Zuständen wird er sofort entfernt.
+`logout` ist in jedem Zustand möglich. Bricht die Verbindung **im Spiel** ab, bleibt der Spieler 30 Sekunden
+im Zustand `imSpiel` (Gnadenfrist). In allen anderen Zuständen wird er sofort entfernt. Ein `logout` im Spiel
+beendet die Partie sofort ohne Gnadenfrist – der Gegner gewinnt (`reason: 'disconnect'`).
 
 ### Wichtige Abläufe
 
 **Ein Zug:** `move { row, col }` → Server prüft (Zustand, am Zug, Zeit, ganze Zahlen 0–10, Feld frei) →
-`state` an alle im Raum, bei Fehler `invalid { reason }` nur an den Absender → Sieg per BFS geprüft →
-gegebenenfalls `gameOver { winner, path, reason }`.
+Stein setzen und gleich danach Sieg per BFS prüfen → `state` an alle im Raum → gegebenenfalls
+`gameOver { winner, path, reason }`. Bei Fehler geht `invalid { reason }` nur an den Absender.
+Sonderfall: War die Zeit des Ziehenden schon abgelaufen, bekommt er `invalid`, und der ganze Raum
+bekommt zusätzlich `state` und `gameOver { reason: 'timeout' }`.
 
 **Sieg-Erkennung (BFS):** Alle eigenen Steine am Startrand (Rot: oberste Zeile, Blau: linke Spalte) kommen
 in eine Warteschlange. Von dort wird Feld für Feld über die 6 Nachbarn weitergesucht und jeder Vorgänger gemerkt.
@@ -232,10 +241,10 @@ Alle Ereignisse laufen über Socket.io. Daten sind JSON-Objekte; Felder in `[]` 
 | `cancel` | – | `wartend` | Warteschlange bzw. privaten Raum verlassen → `cancelled` |
 | `createPrivate` | – | `idle` | privaten Raum öffnen → `waiting { mode: 'private', code }` |
 | `joinPrivate` | `{ code }` | `idle` | mit Code beitreten → `gameStart` für beide oder `privateError` |
-| `move` | `{ row, col }` | `imSpiel` | gültig → `state` an den Raum; sonst `invalid` an den Absender |
+| `move` | `{ row, col }` | `imSpiel` | gültig → `state` an den Raum (bei Sieg danach `gameOver`); sonst `invalid` an den Absender – bei abgelaufener Zeit zusätzlich `state` + `gameOver { reason: 'timeout' }` an den Raum |
 | `swap` | – | `imSpiel` (Blau, direkt nach Rots 1. Zug) | Swap-Regel → `state` oder `invalid` |
 | `resign` | – | `imSpiel` | aufgeben → `gameOver { reason: 'resign' }` |
-| `chat` | `{ text }` | `imSpiel` oder nach Spielende | → `chat` an Raum bzw. beide Gegner, sonst `chatError` |
+| `chat` | `{ text }` | `imSpiel` oder nach Spielende | → `chat` an Raum bzw. beide Gegner; zu lang/leer oder zu schnell → `chatError`; in anderen Zuständen ignoriert |
 | `reaction` | `{ emoji }` | `imSpiel` oder nach Spielende | nur 👍 😮 😅 🔥 👏 🤝 → `reaction` |
 | `rematch` | – | `idle` nach Spielende | Revanche wünschen → `rematchWaiting` / `rematchOffered` / `gameStart` / `rematchCancelled` |
 | `leaveGame` | – | `idle` nach Spielende | Spielende-Bildschirm verlassen → Gegner bekommt `rematchCancelled` |
@@ -249,13 +258,13 @@ Alle Ereignisse laufen über Socket.io. Daten sind JSON-Objekte; Felder in `[]` 
 |---|---|---|
 | `joined` | `{ name, session }` | angemeldet; `session` ist das geheime Token zum Wiederverbinden |
 | `joinError` | `{ reason }` | Name ungültig |
-| `lobby` | `{ online, games, list: [{ id, red, blue, moves, spectators }], leaderboard: [{ name, wins, losses }] }` | Live-Daten der Lobby (gebündelt, höchstens alle 100 ms bzw. 1 s nach Zügen) |
+| `lobby` | `{ online, games, list: [{ id, red, blue, moves, spectators }], leaderboard: [{ name, wins, losses }] }` | Live-Daten der Lobby; sofort an den eigenen Socket nach `join` und beim Wiederverbinden, sonst an alle gebündelt (Update nach 100 ms, nach Zügen nach 1 s) |
 | `waiting` | `{ mode: 'queue' }` oder `{ mode: 'private', code, expiresInMs }` | wartet auf einen Gegner |
 | `cancelled` | – | Warten abgebrochen |
 | `privateError` | `{ reason }` | Code ungültig, abgelaufen oder schon benutzt |
 | `privateExpired` | – | eigener privater Code ist abgelaufen |
 | `gameStart` | `{ gameId, color, you, opponent, players: { red, blue }, private, timeMs, [resumed], [chat] }` | Spiel beginnt – oder (mit `resumed`) geht nach einem Abbruch weiter |
-| `state` | `{ board, turn, moves: [{ color, row, col, swap }], clock: { red, blue }, swapAvailable }` | aktueller Spielstand (`board[r][c]` = `null` / `'red'` / `'blue'`) |
+| `state` | `{ board, turn, moves: [{ color, row, col, swap }], clock: { red, blue }, swapAvailable }` | aktueller Spielstand (`board[r][c]` = `null` / `'red'` / `'blue'`; `turn` ist `null`, sobald das Spiel beendet ist) |
 | `invalid` | `{ reason }` | Zug oder Tausch abgelehnt – Anzeige bleibt unverändert |
 | `gameOver` | `{ winner, reason, path, moveCount, players, clock }` | Spielende; `reason`: `connect`, `resign`, `timeout` oder `disconnect`; `path` nur bei `connect` |
 | `chat` | `{ from, color, text, time }` | Chat-Nachricht (Text wird im Browser nur als Text angezeigt) |
