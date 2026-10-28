@@ -1,18 +1,20 @@
-// Lasttest: 40 simulierte Spieler (Bots) gleichzeitig gegen einen echten Server.
+// Lasttest: viele simulierte Spieler (Bots, Standard 40) gleichzeitig gegen einen echten Server.
 // Die Bots verhalten sich unterschiedlich: normal spielen, aufgeben, mitten im Spiel
 // die Verbindung trennen, kaputte Daten senden, Warten abbrechen …
 // Am Ende wird geprüft: alle Spiele korrekt beendet, alle Gewinnpfade gültig,
 // keine Server-Fehler, Server läuft weiter, alle Maps/Timer/Räume leer.
 //
-// Start: npm run loadtest
+// Start: npm run loadtest            (40 Bots)
+//        npm run loadtest -- 100     (beliebige Anzahl Bots)
 
 'use strict';
 
+const { performance, monitorEventLoopDelay } = require('perf_hooks');
 const { io: ioClient } = require('socket.io-client');
 const { erstelleServer } = require('../server');
 const { ROT, BLAU, nachbarn, findeGewinnPfad } = require('../game');
 
-const ANZAHL_BOTS = 40;
+const ANZAHL_BOTS = Number(process.argv[2]) || 40;
 const MAX_DAUER_MS = 120000;
 
 // Kürzere Zeiten für den Lasttest (werden beim Erstellen des Servers gelesen)
@@ -59,6 +61,7 @@ const statistik = {
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
+  antwortzeiten: [],     // ms von "move" senden bis zum neuen Zustand (nur ehrliche Bots)
   invalidNachVerhalten: {},  // Verhalten → Anzahl "invalid"-Antworten
   timeoutVerlierer: {},      // Verhalten → wie oft auf Zeit verloren
   fehler: [],
@@ -298,6 +301,11 @@ class Bot {
 
   neuerZustand(zustand) {
     clearTimeout(this.antwortTimer);
+    // Antwortzeit messen: Wie lange hat es vom eigenen Zug bis zum neuen Brett gedauert?
+    if (this.zugGesendet && !this.istManipuliert()) {
+      statistik.antwortzeiten.push(performance.now() - this.zugGesendet);
+    }
+    this.zugGesendet = null;
     this.brett = zustand.board;
     if (this.verhalten === 'zuschauer') {
       // Zuschauer prüfen nur: Die Zugzahl darf nie zurückgehen
@@ -337,6 +345,7 @@ class Bot {
     const [row, col] = frei[zufall(0, frei.length - 1)];
     this.eigeneZuege++;
     statistik.zuege++;
+    this.zugGesendet = performance.now();
     this.socket.emit('move', { row, col });
     // Kommt keine Antwort (z. B. vom Rate-Limit verworfen), nochmal versuchen
     clearTimeout(this.antwortTimer);
@@ -437,6 +446,9 @@ class Bot {
 // ---------- Ablauf ----------
 async function main() {
   const start = Date.now();
+  // Misst, wie lange die Event-Loop blockiert war (hoch = Prozess überlastet)
+  const eventLoop = monitorEventLoopDelay({ resolution: 10 });
+  eventLoop.enable();
   // Server-Fehler mitzählen (zusätzlich zu diagnose().fehler)
   const originalError = console.error;
   let serverFehlerAusgaben = 0;
@@ -528,6 +540,14 @@ async function main() {
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);
+
+  // Antwortzeiten: Median, 95 % und das Maximum
+  const zeiten = statistik.antwortzeiten.sort((a, b) => a - b);
+  const anteil = q => (zeiten[Math.min(zeiten.length - 1, Math.floor(q * zeiten.length))] || 0).toFixed(0);
+  console.log(`Antwortzeit auf Züge (${zeiten.length} Messungen): Median ${anteil(0.5)} ms, 95 % unter ${anteil(0.95)} ms, max. ${anteil(1)} ms`);
+  eventLoop.disable();
+  const ms = ns => (ns / 1e6).toFixed(0);
+  console.log(`Event-Loop-Verzögerung (Server und Bots im selben Prozess): Mittel ${ms(eventLoop.mean)} ms, 99 % unter ${ms(eventLoop.percentile(99))} ms, max. ${ms(eventLoop.max)} ms`);
 
   if (statistik.fehler.length) {
     console.error(`\nLasttest FEHLGESCHLAGEN (${statistik.fehler.length} Probleme):`);

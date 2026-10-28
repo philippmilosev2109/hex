@@ -126,12 +126,26 @@ Zum Ausprobieren auf einem einzigen Rechner reichen zwei Browserfenster (z. B. e
 | Befehl | Was wird geprüft? |
 |---|---|
 | `npm test` | **Jest**, 94 Tests: Spiellogik (`game.js`: Sieg Rot/Blau, Lücken, Ränder, Zickzack, Gewinnpfad, volles Brett, ungültige Züge, Swap-Regel, Zeitkonto) und Server über echte Socket.io-Verbindungen (Matching, private Räume, Zugprüfung, Aufgabe, Timeout, Revanche, Chat, Zuschauer, Rangliste, Disconnect, Reconnect, kaputte Daten, Rate-Limit) |
-| `npm run loadtest` | **Lasttest** mit 40 Bots gleichzeitig: Schnellspiele und private Räume, zufällige gültige Züge bis zum Sieg, Aufgeben, Trennen mitten im Spiel, Wiederverbinden, Zuschauen, Chat-Spam, kaputte Daten, Rate-Limit-Flut. Danach: alle Spiele korrekt beendet, alle Gewinnpfade gültig, Rangliste stimmig, keine Server-Fehler, alle Maps/Timer/Räume leer, Server nimmt weiter Spieler an |
+| `npm run loadtest` | **Lasttest** mit 40 Bots gleichzeitig (andere Anzahl: `npm run loadtest -- 100`): Schnellspiele und private Räume, zufällige gültige Züge bis zum Sieg, Aufgeben, Trennen mitten im Spiel, Wiederverbinden, Zuschauen, Chat-Spam, kaputte Daten, Rate-Limit-Flut. Danach: alle Spiele korrekt beendet, alle Gewinnpfade gültig, Rangliste stimmig, keine Server-Fehler, alle Maps/Timer/Räume leer, Server nimmt weiter Spieler an. Zusätzlich gemessen: Antwortzeit auf Züge und Verzögerung der Event-Loop |
 | `npm run contrast` | **Kontrastprüfung** aller Farbpaare aus den CSS-Variablen nach WCAG AA – für das dunkle und das helle Design, außerdem: keine festen Farben außerhalb der beiden Farbblöcke |
 | `npm run uitest` | **UI-Test mit Playwright** (nur Testwerkzeug): zwei bzw. drei Browser spielen komplette Partien auf 1280 × 800, 1024 × 768 und 375 × 812 (dunkel) sowie 1280 × 800 und 375 × 812 (hell), inklusive privatem Spiel, Swap, Chat, Zuschauen, Revanche, F5 und Tastaturbedienung. Screenshots landen in `screenshots/`, jede Fehlermeldung in der Browser-Konsole lässt den Test scheitern |
 
 Der UI-Test braucht einmalig den Browser von Playwright: `npx playwright install chromium`.
 Lasttest und UI-Test verkürzen die Zeiten (Bedenkzeit, Gnadenfrist) automatisch.
+
+### Belastbarkeit (gemessen am 28.10.2026, Windows 11, Server und Bots auf einem Rechner)
+
+| Bots | Spiele | Züge | Antwortzeit auf Züge (Median / 95 %) | Ergebnis |
+|---|---|---|---|---|
+| 40 | 40 | ca. 2 700 | 2 ms / 6 ms | bestanden |
+| 100 | ca. 100 | ca. 7 100 | 3 ms / 9 ms | bestanden |
+| 250 | ca. 235 | ca. 17 000 | 3 ms / 14 ms | einzelne Bots kommen nicht ins Spiel (siehe unten) |
+
+Bei 250 Bots bleibt der Server schnell, aber ein paar Bots mit HTTP-Polling bekommen beim Verbinden
+`ECONNREFUSED`: Der Node-Testclient öffnet für **jede** Polling-Anfrage eine neue TCP-Verbindung, und Windows
+lässt nur ca. 200 noch nicht angenommene Verbindungen warten. Das ist eine Grenze des Testaufbaus –
+reine WebSocket-Verbindungen (die Browser nach dem Aufbau nutzen) klappen auch mit 1000 Clients
+auf einmal, wenn sie sich über zwei Sekunden verteilt anmelden.
 
 ---
 
