@@ -1,14 +1,21 @@
 // board.js – Das Spielbrett als SVG
-// Zeichnet die 121 Sechsecke, die farbigen Ränder und die Steine.
+// Zeichnet die 121 Sechsecke, die farbigen Ränder, die Koordinaten und die Steine.
 // Wichtig: Das Brett setzt NIE selbst einen Stein. Ein Klick wird nur gemeldet,
 // gezeichnet wird erst, wenn der Server den Zug bestätigt (neuer "state").
 
 export const GROESSE = 11;          // 11×11 Felder
 const R = 24;                       // Radius eines Sechsecks (Mitte → Ecke)
 const BREITE = Math.sqrt(3) * R;    // Breite eines Sechsecks (Spitze nach oben)
-const RAND = 30;                    // Platz um das Brett herum
+const RAND = 36;                    // Platz um das Brett (Randlinien + Koordinaten)
 const STEIN_RADIUS = R * 0.62;
+const PFAD_SCHRITT_MS = 90;         // Gewinnpfad: Verzögerung von Stein zu Stein
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const SPALTEN = 'ABCDEFGHIJK';
+
+// Koordinate wie in der Hex-Notation: Spalte als Buchstabe, Zeile als Zahl (z. B. "F7")
+export function koordinate(row, col) {
+  return `${SPALTEN[col]}${row + 1}`;
+}
 
 // Mittelpunkt des Feldes in Zeile r, Spalte c.
 // Jede Zeile wird um eine halbe Feldbreite nach rechts geschoben,
@@ -65,17 +72,31 @@ function steinVerlauf(farbe) {
   return verlauf;
 }
 
+function beschriftung(text, x, y) {
+  const el = svgElement('text', { x: x.toFixed(1), y: y.toFixed(1), class: 'koordinate' });
+  el.textContent = text;
+  return el;
+}
+
 export class Brett {
   // container: HTML-Element, in das das SVG kommt
   // onFeldKlick(row, col): wird bei Klick auf ein freies Feld aufgerufen
   constructor(container, onFeldKlick) {
     this.onFeldKlick = onFeldKlick;
     this.aktiv = false;
+    this.eigeneFarbe = null;
     this.vorschau = null;   // halbtransparenter Vorschau-Stein
-    this.felder = [];   // Polygone [r][c]
-    this.steine = [];   // Stein-Elemente [r][c] oder null
+    this.felder = [];       // Polygone [r][c]
+    this.steine = [];       // Stein-Elemente [r][c] oder null
     this.svg = this.zeichne();
     container.appendChild(this.svg);
+
+    // Auf schmalen Bildschirmen sind die Koordinaten ausgeblendet (siehe style.css).
+    // Dann den leeren Rand wegschneiden, damit die Felder größer werden.
+    const schmal = window.matchMedia('(max-width: 520px)');
+    const anpassen = () => this.svg.setAttribute('viewBox', schmal.matches ? this.viewBoxKompakt : this.viewBoxNormal);
+    schmal.addEventListener('change', anpassen);
+    anpassen();
 
     // Ein einziger Klick-Handler für alle Felder (Event-Delegation)
     this.svg.addEventListener('click', event => {
@@ -86,14 +107,25 @@ export class Brett {
       if (this.steine[row][col]) return;   // belegt – gar nicht erst senden
       this.onFeldKlick(row, col);
     });
+
+    // Hover-Vorschau: halbtransparenter Stein in der eigenen Farbe auf freien Feldern
+    this.svg.addEventListener('pointerover', event => {
+      const feld = event.target.closest('.feld');
+      if (!this.aktiv || !feld || !feld.classList.contains('frei')) return;
+      this.zeigeVorschau(Number(feld.dataset.r), Number(feld.dataset.c), this.eigeneFarbe);
+    });
+    this.svg.addEventListener('pointerleave', () => this.versteckeVorschau());
   }
 
   zeichne() {
     // Größe der Zeichenfläche: Breite + halbe Verschiebung durch die Rautenform
     const breite = RAND * 2 + BREITE * (GROESSE + (GROESSE - 1) / 2);
     const hoehe = RAND * 2 + R * 2 + 1.5 * R * (GROESSE - 1);
+    const weg = RAND - 10;   // ohne Koordinaten reichen 10 Einheiten Rand
+    this.viewBoxNormal = `0 0 ${breite.toFixed(1)} ${hoehe.toFixed(1)}`;
+    this.viewBoxKompakt = `${weg} ${weg} ${(breite - 2 * weg).toFixed(1)} ${(hoehe - 2 * weg).toFixed(1)}`;
     const svg = svgElement('svg', {
-      viewBox: `0 0 ${breite.toFixed(1)} ${hoehe.toFixed(1)}`,
+      viewBox: this.viewBoxNormal,
       role: 'img',
       'aria-label': 'Spielbrett mit 11 mal 11 Feldern. Rot verbindet oben und unten, Blau links und rechts.',
     });
@@ -104,18 +136,19 @@ export class Brett {
 
     const felderGruppe = svgElement('g', { class: 'felder' });
     const raender = svgElement('g', { class: 'raender' });
-    this.steinGruppe = svgElement('g', { class: 'steine' });
+    const koordinaten = svgElement('g', { class: 'koordinaten', 'aria-hidden': 'true' });
     this.pfadGruppe = svgElement('g', { class: 'pfad' });
+    this.steinGruppe = svgElement('g', { class: 'steine' });
+    this.markierung = svgElement('circle', { r: (STEIN_RADIUS + 3.5).toFixed(1), class: 'letzter-zug' });
+    this.markierung.style.display = 'none';
 
     for (let r = 0; r < GROESSE; r++) {
       this.felder.push([]);
       this.steine.push(Array(GROESSE).fill(null));
       for (let c = 0; c < GROESSE; c++) {
         const m = mittelpunkt(r, c);
-        const p = ecken(m.x, m.y);
-
         const feld = svgElement('polygon', {
-          points: alsPunktString(p),
+          points: alsPunktString(ecken(m.x, m.y)),
           class: 'feld frei',
           'data-r': r,
           'data-c': c,
@@ -141,20 +174,37 @@ export class Brett {
       randLinie(links, 'rand-blau'), randLinie(rechts, 'rand-blau'),
     );
 
-    svg.append(felderGruppe, raender, this.pfadGruppe, this.steinGruppe);
+    // Koordinaten: Buchstaben A–K über und unter den Spalten, Zahlen 1–11 neben den Zeilen
+    for (let i = 0; i < GROESSE; i++) {
+      const obenMitte = mittelpunkt(0, i);
+      const untenMitte = mittelpunkt(letzte, i);
+      const linksMitte = mittelpunkt(i, 0);
+      const rechtsMitte = mittelpunkt(i, letzte);
+      koordinaten.append(
+        beschriftung(SPALTEN[i], obenMitte.x, obenMitte.y - R - 13),
+        beschriftung(SPALTEN[i], untenMitte.x, untenMitte.y + R + 14),
+        beschriftung(String(i + 1), linksMitte.x - BREITE / 2 - 15, linksMitte.y),
+        beschriftung(String(i + 1), rechtsMitte.x + BREITE / 2 + 15, rechtsMitte.y),
+      );
+    }
+
+    svg.append(felderGruppe, raender, koordinaten, this.pfadGruppe, this.steinGruppe, this.markierung);
     return svg;
   }
 
-  // Darf der Spieler gerade klicken? farbe = eigene Farbe (für den Hover-Effekt)
+  // Darf der Spieler gerade klicken? farbe = eigene Farbe (für Hover und Vorschau)
   setzeInteraktiv(aktiv, farbe = null) {
     this.aktiv = aktiv;
+    this.eigeneFarbe = farbe;
     this.svg.classList.toggle('aktiv', aktiv);
     this.svg.classList.toggle('hover-red', aktiv && farbe === 'red');
     this.svg.classList.toggle('hover-blue', aktiv && farbe === 'blue');
+    if (!aktiv) this.versteckeVorschau();
   }
 
-  // Steine an den Zustand vom Server anpassen (board[r][c] = null | 'red' | 'blue')
-  zeigeZustand(board) {
+  // Steine an den Zustand vom Server anpassen (board[r][c] = null | 'red' | 'blue').
+  // animieren: neue Steine "fallen" aufs Brett (nicht beim Wiederherstellen eines Spiels).
+  zeigeZustand(board, letzterZug = null, { animieren = true } = {}) {
     this.versteckeTauschVorschau();
     for (let r = 0; r < GROESSE; r++) {
       for (let c = 0; c < GROESSE; c++) {
@@ -162,23 +212,24 @@ export class Brett {
         const stein = this.steine[r][c];
         if (stein && stein.dataset.farbe === soll) continue;   // unverändert
         if (stein) stein.remove();                            // z. B. beim Tausch
-        this.steine[r][c] = soll ? this.neuerStein(r, c, soll) : null;
+        this.steine[r][c] = soll ? this.neuerStein(r, c, soll, animieren) : null;
         this.felder[r][c].classList.toggle('frei', !soll);
       }
     }
+    this.zeigeLetztenZug(letzterZug);
   }
 
   // Ein Stein ist eine Gruppe aus Kreis und Richtungszeichen:
   // Rot bekommt einen senkrechten Strich (verbindet oben ↕ unten),
   // Blau einen waagrechten (links ↔ rechts). So sind die Farben
   // auch ohne Farbsehen unterscheidbar.
-  neuerStein(r, c, farbe) {
+  neuerStein(r, c, farbe, animieren) {
     const m = mittelpunkt(r, c);
     const stein = svgElement('g', {
-      class: `stein ${farbe}`,
+      class: `stein ${farbe}${animieren ? ' neu' : ''}`,
       transform: `translate(${m.x.toFixed(1)} ${m.y.toFixed(1)})`,
     });
-    const innen = svgElement('g', { class: 'stein-innen' });   // für Animationen
+    const innen = svgElement('g', { class: 'stein-innen' });   // wird animiert
     const k = STEIN_RADIUS * 0.42;
     innen.append(
       svgElement('circle', { r: STEIN_RADIUS.toFixed(1), fill: `url(#verlauf-${farbe})` }),
@@ -194,9 +245,22 @@ export class Brett {
     return stein;
   }
 
-  // Halbtransparenter Stein als Vorschau (z. B. wohin der Tausch den Stein setzt)
+  // Ring um den zuletzt gesetzten Stein
+  zeigeLetztenZug(zug) {
+    if (!zug) {
+      this.markierung.style.display = 'none';
+      return;
+    }
+    const m = mittelpunkt(zug.row, zug.col);
+    this.markierung.setAttribute('cx', m.x.toFixed(1));
+    this.markierung.setAttribute('cy', m.y.toFixed(1));
+    this.markierung.style.display = '';
+  }
+
+  // Halbtransparenter Stein als Vorschau (Hover oder Tausch)
   zeigeVorschau(row, col, farbe) {
     this.versteckeVorschau();
+    if (!farbe) return;
     const m = mittelpunkt(row, col);
     this.vorschau = svgElement('circle', {
       cx: m.x.toFixed(1),
@@ -224,16 +288,28 @@ export class Brett {
     this.versteckeVorschau();
   }
 
-  // Gewinnpfad hervorheben: Linie durch die Steine + leuchtende Steine
+  // Gewinnpfad: Linie wird Stein für Stein nachgezeichnet, die Steine leuchten nacheinander auf.
+  // Rückgabe: Dauer der Animation in Millisekunden.
   zeigeGewinnPfad(pfad) {
     this.pfadGruppe.replaceChildren();
-    if (!pfad || pfad.length === 0) return;
+    if (!pfad || pfad.length === 0) return 0;
     const punkte = pfad.map(f => mittelpunkt(f.row, f.col));
-    this.pfadGruppe.appendChild(svgElement('polyline', {
-      points: alsPunktString(punkte),
-      class: 'gewinn-linie',
-    }));
-    for (const f of pfad) this.steine[f.row][f.col]?.classList.add('gewinn');
+    let laenge = 0;
+    for (let i = 1; i < punkte.length; i++) {
+      laenge += Math.hypot(punkte[i].x - punkte[i - 1].x, punkte[i].y - punkte[i - 1].y);
+    }
+    const dauer = pfad.length * PFAD_SCHRITT_MS;
+    const linie = svgElement('polyline', { points: alsPunktString(punkte), class: 'gewinn-linie' });
+    linie.style.setProperty('--laenge', laenge.toFixed(1));
+    linie.style.setProperty('--dauer', `${dauer}ms`);
+    this.pfadGruppe.appendChild(linie);
+    pfad.forEach((f, i) => {
+      const stein = this.steine[f.row][f.col];
+      if (!stein) return;
+      stein.style.setProperty('--verzoegerung', `${i * PFAD_SCHRITT_MS}ms`);
+      stein.classList.add('gewinn');
+    });
+    return dauer;
   }
 
   // Leeres Brett für ein neues Spiel
@@ -241,6 +317,7 @@ export class Brett {
     this.vorschau = null;
     this.steinGruppe.replaceChildren();
     this.pfadGruppe.replaceChildren();
+    this.markierung.style.display = 'none';
     for (let r = 0; r < GROESSE; r++) {
       for (let c = 0; c < GROESSE; c++) {
         this.steine[r][c] = null;

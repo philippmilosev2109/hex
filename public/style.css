@@ -44,6 +44,7 @@
   --feld-hover-blue: #243a6c;
   --gewinn: #ffffff;
   --gewinn-linie: rgba(255, 255, 255, 0.85);
+  --letzter-zug: #ffcc4d;       /* Ring um den zuletzt gesetzten Stein */
 
   /* Sonstiges */
   --online: #3ddc84;            /* Live-Punkt in der Lobby */
@@ -155,6 +156,24 @@ h1:focus, h2:focus { outline: none; }
   gap: 10px;
   min-width: 0;
 }
+
+/* Runder Symbol-Knopf (Ton an/aus) */
+.knopf-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  background: var(--flaeche-hoch);
+  border: 1px solid var(--rahmen);
+  border-radius: 50%;
+  color: var(--text);
+  cursor: pointer;
+}
+.knopf-icon:hover { border-color: var(--text-2); }
+.knopf-icon .icon-ton-aus,
+.knopf-icon[aria-pressed="true"] .icon-ton-an { display: none; }
+.knopf-icon[aria-pressed="true"] .icon-ton-aus { display: block; }
 
 .kopf-name {
   max-width: 220px;
@@ -580,11 +599,43 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 #verlauf-blue .stop-mitte { stop-color: var(--blau); }
 #verlauf-blue .stop-schatten { stop-color: var(--stein-blau-schatten); }
 
+/* Koordinaten am Brettrand (A–K, 1–11) */
+.koordinate {
+  fill: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
 /* Heller Rand in der eigenen Farbe: hebt den Stein deutlich (≥ 3:1) vom Feld ab */
 .stein { pointer-events: none; }
 .stein circle { stroke-width: 1.4; }
 .stein.red circle { stroke: var(--stein-rot-licht); }
 .stein.blue circle { stroke: var(--stein-blau-licht); }
+
+/* Animationen wirken auf die innere Gruppe, die äußere trägt die Position */
+.stein-innen {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Neuer Stein fällt kurz von oben aufs Brett */
+.stein.neu .stein-innen { animation: stein-fallen 0.32s cubic-bezier(0.2, 0.8, 0.3, 1.25) both; }
+
+@keyframes stein-fallen {
+  from { opacity: 0; transform: translateY(-18px) scale(1.35); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Ring um den zuletzt gesetzten Stein */
+.letzter-zug {
+  fill: none;
+  stroke: var(--letzter-zug);
+  stroke-width: 2.5;
+  pointer-events: none;
+}
 
 .stein-zeichen {
   stroke: var(--stein-zeichen);
@@ -592,7 +643,26 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   stroke-linecap: round;
 }
 
-.stein.gewinn circle { stroke: var(--gewinn); stroke-width: 2.5; }
+/* Gewinnpfad: Steine leuchten nacheinander auf (Verzögerung kommt aus board.js) */
+.stein.gewinn circle {
+  stroke: var(--gewinn);
+  stroke-width: 2.5;
+  animation: gewinn-rand 0.3s ease-out both;
+  animation-delay: var(--verzoegerung, 0ms);
+}
+.stein.gewinn .stein-innen {
+  animation: gewinn-puls 0.45s ease-out both;
+  animation-delay: var(--verzoegerung, 0ms);
+}
+
+@keyframes gewinn-rand {
+  from { stroke-width: 1.4; stroke-opacity: 0; }
+  to   { stroke-width: 2.5; stroke-opacity: 1; }
+}
+
+@keyframes gewinn-puls {
+  50% { transform: scale(1.22); }
+}
 
 /* Halbtransparenter Vorschau-Stein (Swap-Vorschau, später auch Hover) */
 .vorschau {
@@ -610,6 +680,20 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+/* Die Linie wird gezeichnet – nur wenn Bewegung erwünscht ist,
+   sonst bleibt sie einfach komplett sichtbar */
+@media (prefers-reduced-motion: no-preference) {
+  .gewinn-linie {
+    stroke-dasharray: var(--laenge);
+    stroke-dashoffset: var(--laenge);
+    animation: linie-zeichnen var(--dauer) linear forwards;
+  }
+}
+
+@keyframes linie-zeichnen {
+  to { stroke-dashoffset: 0; }
 }
 
 /* --- Panel mit Spielinformationen --- */
@@ -769,6 +853,56 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Zugverlauf */
+.abschnitt-titel {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.zugliste {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+  max-height: 132px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--flaeche-tief);
+  border: 1px solid var(--rahmen);
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.zugliste:empty::before {
+  content: "Noch keine Züge.";
+  grid-column: 1 / -1;
+  color: var(--text-2);
+}
+
+.zugliste li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.zug-punkt {
+  flex: none;
+  width: 9px;
+  height: 10px;
+  clip-path: var(--hex);
+}
+.zug-punkt.red { background: var(--rot); }
+.zug-punkt.blue { background: var(--blau); }
+
+.zugliste .letzter { font-weight: 700; }
+
 /* ==========================================================
    7. Spielende: Karte über dem Brett
    ========================================================== */
@@ -809,6 +943,41 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 .ende-ergebnis {
   margin: 0 0 18px;
   font-weight: 650;
+}
+
+.text-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+}
+.text-knoepfe .knopf-text { margin: 0; }
+
+/* Kleiner Knopf, um nach "Brett ansehen" das Ergebnis wieder zu zeigen */
+.ergebnis-pille {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  padding: 8px 16px;
+  background: var(--flaeche-hoch);
+  border: 1px solid var(--rahmen-stark);
+  border-radius: 999px;
+  box-shadow: var(--schatten);
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* Konfetti liegt über allem, fängt aber keine Klicks ab */
+.konfetti {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 /* ==========================================================
@@ -885,6 +1054,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (max-width: 520px) {
   :root { --kopf-hoehe: 48px; }
+  .koordinaten { display: none; }   /* auf dem Handy wären sie zu klein zum Lesen */
   .kopfzeile { padding: 0 12px; }
   main { padding: 8px 8px 24px; }
   .karte { padding: 24px 18px; }

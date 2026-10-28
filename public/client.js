@@ -2,8 +2,10 @@
 // Der Client vertraut sich nie selbst: Er schickt nur Wünsche (join, move, …)
 // und zeigt an, was der Server zurückmeldet. Steine erscheinen erst nach "state".
 
-import { Brett } from './board.js';
+import { Brett, koordinate } from './board.js';
 import { $, zeigeAnsicht, meldung, pruefeName, FARBNAME, RICHTUNG } from './ui.js';
+import { sound } from './sound.js';
+import { konfetti } from './effekte.js';
 
 // Verbindung zum Server, von dem die Seite geladen wurde.
 // Bricht sie ab, versucht Socket.io automatisch, sich neu zu verbinden.
@@ -20,7 +22,12 @@ const app = {
   zugGesendet: false,  // Zug abgeschickt, Antwort vom Server steht noch aus
   nachJoin: null,      // was nach "joined" passieren soll (z. B. 'queue')
   wartemodus: null,    // beim Warten: 'queue' (Warteschlange) oder 'private' (eigener Code)
+  endeTimer: null,     // zeigt die Spielende-Karte erst nach der Gewinnpfad-Animation
+  zeitWarnung: false,  // Warnton "Zeit knapp" schon gespielt?
+  tickSekunde: null,   // letzte Sekunde, in der das Ticken kam (unter 10 s)
 };
+
+const wenigerBewegung = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Klick auf ein freies Feld → Zug an den Server schicken (nicht selbst setzen!)
 const brett = new Brett($('#brett'), (row, col) => {
@@ -37,7 +44,20 @@ function wechsleZu(ansicht) {
   const kopfName = $('#kopf-name');
   kopfName.textContent = app.name || '';
   kopfName.hidden = !app.name || ansicht === 'login';
+  if (ansicht !== 'spiel') document.title = 'Hex';
 }
+
+// Ton an/aus – die Einstellung merkt sich sound.js im localStorage
+function zeigeTonKnopf() {
+  const stumm = sound.istStumm();
+  $('#knopf-ton').setAttribute('aria-pressed', String(stumm));
+  $('#knopf-ton').title = stumm ? 'Ton einschalten' : 'Ton ausschalten';
+}
+$('#knopf-ton').addEventListener('click', () => {
+  sound.setzeStumm(!sound.istStumm());
+  zeigeTonKnopf();
+});
+zeigeTonKnopf();
 
 function istMeinZug() {
   return app.laeuft && !app.zugGesendet && socket.connected &&
@@ -207,10 +227,26 @@ function zeigeUhren() {
   const vergangen = performance.now() - uhrStand.zeitpunkt;
   for (const farbe of ['red', 'blue']) {
     let rest = uhrStand[farbe];
-    if (uhrStand.laeuft && farbe === uhrStand.turn) rest = Math.max(0, rest - vergangen);
+    const laeuft = uhrStand.laeuft && farbe === uhrStand.turn;
+    if (laeuft) rest = Math.max(0, rest - vergangen);
     const uhr = $(`#uhr-${farbe}`);
     uhr.textContent = formatiereZeit(rest);
     uhr.classList.toggle('knapp', rest < 20000);
+    if (laeuft && farbe === app.farbe) warneBeiKnapperZeit(rest);
+  }
+}
+
+// Eigene Uhr: einmal warnen bei 20 s, in den letzten 10 s jede Sekunde ticken
+function warneBeiKnapperZeit(rest) {
+  if (rest <= 0) return;
+  if (rest < 20000 && !app.zeitWarnung) {
+    app.zeitWarnung = true;
+    sound.zeitKnapp();
+  }
+  const sekunde = Math.ceil(rest / 1000);
+  if (rest < 10000 && sekunde !== app.tickSekunde) {
+    app.tickSekunde = sekunde;
+    sound.zeitKnapp();
   }
 }
 
@@ -240,8 +276,13 @@ socket.on('gameStart', daten => {
     eintrag.querySelector('.spieler-name').textContent = daten.players[farbe];
     eintrag.querySelector('.du').hidden = farbe !== app.farbe;
   }
+  clearTimeout(app.endeTimer);
+  app.zeitWarnung = false;
+  app.tickSekunde = null;
   brett.zuruecksetzen();
   $('#spielende').hidden = true;
+  $('#knopf-ergebnis').hidden = true;
+  $('#zugliste').replaceChildren();
   setzeAufgebenZurueck();
   setzeUhren({ red: daten.timeMs, blue: daten.timeMs }, 'red', false);
   wechsleZu('spiel');
@@ -251,18 +292,48 @@ socket.on('state', zustand => {
   const vorher = app.zustand;
   app.zustand = zustand;
   app.zugGesendet = false;
-  brett.zeigeZustand(zustand.board);
+  const letzter = zustand.moves[zustand.moves.length - 1] || null;
+  // Beim allerersten Zustand eines Spiels nichts animieren
+  brett.zeigeZustand(zustand.board, letzter, { animieren: vorher !== null });
   setzeUhren(zustand.clock, zustand.turn, app.laeuft && zustand.turn !== null);
+  zeigeZugverlauf(zustand.moves);
   aktualisiereStatus();
 
+  // Neuer Zug? Dann Ton – eigener Stein klingt anders als der des Gegners
+  const neuerZug = vorher && zustand.moves.length > vorher.moves.length;
+  if (neuerZug) {
+    if (letzter.color === app.farbe) sound.setzen();
+    else sound.gegner();
+  }
+
   // Wurde gerade getauscht? Dann beide Spieler kurz informieren.
-  const letzter = zustand.moves[zustand.moves.length - 1];
-  if (letzter?.swap && vorher && vorher.moves.length < zustand.moves.length) {
+  if (neuerZug && letzter.swap) {
     meldung(letzter.color === app.farbe
       ? 'Du hast getauscht – jetzt ist Rot wieder am Zug.'
       : `${app.spieler.blue} hat getauscht: Dein erster Stein ist jetzt ein blauer Stein.`);
   }
 });
+
+// Zugverlauf im Panel: "12. Rot – F7" (links Rot, rechts Blau)
+function zeigeZugverlauf(moves) {
+  const liste = $('#zugliste');
+  if (moves.length < liste.children.length) liste.replaceChildren();
+  for (let i = liste.children.length; i < moves.length; i++) {
+    const zug = moves[i];
+    const eintrag = document.createElement('li');
+    const punkt = document.createElement('span');
+    punkt.className = `zug-punkt ${zug.color}`;
+    punkt.setAttribute('aria-hidden', 'true');
+    const feld = koordinate(zug.row, zug.col);
+    const text = document.createElement('span');
+    text.textContent = `${i + 1}. ${FARBNAME[zug.color]} – ${zug.swap ? `Tausch (${feld})` : feld}`;
+    eintrag.append(punkt, text);
+    liste.appendChild(eintrag);
+  }
+  liste.querySelector('.letzter')?.classList.remove('letzter');
+  liste.lastElementChild?.classList.add('letzter');
+  liste.scrollTop = liste.scrollHeight;
+}
 
 // Ungültiger Zug: Anzeige bleibt unverändert, nur ein Hinweis
 socket.on('invalid', ({ reason }) => {
@@ -275,6 +346,10 @@ socket.on('invalid', ({ reason }) => {
 function aktualisiereStatus() {
   const zustand = app.zustand;
   brett.setzeInteraktiv(istMeinZug(), app.farbe);
+
+  // Browser-Tab zeigt an, wenn man dran ist (praktisch bei mehreren Tabs)
+  const dran = app.laeuft && zustand?.turn === app.farbe;
+  document.title = dran ? '● Du bist am Zug – Hex' : 'Hex';
 
   const status = $('#status');
   status.classList.remove('status-red', 'status-blue');
@@ -362,10 +437,21 @@ $('#knopf-aufgeben').addEventListener('click', () => {
 socket.on('gameOver', ende => {
   app.laeuft = false;
   setzeUhren(ende.clock, null, false);    // Uhren bleiben auf dem Endstand stehen
-  brett.zeigeGewinnPfad(ende.path);
+  const pfadDauer = brett.zeigeGewinnPfad(ende.path);
   aktualisiereStatus();
   setzeAufgebenZurueck();
-  zeigeSpielende(ende);
+
+  if (ende.winner === app.farbe) {
+    sound.sieg();
+    konfetti();
+  } else {
+    sound.niederlage();
+  }
+
+  // Erst den Gewinnpfad wachsen lassen, dann die Karte einblenden
+  const warten = ende.path && !wenigerBewegung() ? Math.min(pfadDauer + 500, 2200) : 0;
+  clearTimeout(app.endeTimer);
+  app.endeTimer = setTimeout(() => zeigeSpielende(ende), warten);
 });
 
 function zuegeText(anzahl) {
@@ -397,8 +483,21 @@ function zeigeEndeKarte(titel, text, ergebnis, farbe) {
   const karte = $('#spielende');
   karte.dataset.farbe = farbe || '';
   karte.hidden = false;
+  $('#knopf-ergebnis').hidden = true;
   $('#ende-titel').focus({ preventScroll: true });
 }
+
+// "Brett ansehen": Karte ausblenden, um den Gewinnpfad in Ruhe anzuschauen
+$('#knopf-brett-ansehen').addEventListener('click', () => {
+  $('#spielende').hidden = true;
+  $('#knopf-ergebnis').hidden = false;
+  $('#knopf-ergebnis').focus();
+});
+$('#knopf-ergebnis').addEventListener('click', () => {
+  $('#knopf-ergebnis').hidden = true;
+  $('#spielende').hidden = false;
+  $('#ende-titel').focus({ preventScroll: true });
+});
 
 // 5. Erneut spielen: zurück in die Warteschlange, in die Lobby oder abmelden
 $('#knopf-nochmal').addEventListener('click', () => {

@@ -23,6 +23,12 @@
     </div>
     <div class="kopf-rechts">
       <span id="kopf-name" class="kopf-name" hidden></span>
+      <!-- Ton an/aus (Einstellung wird im Browser gespeichert) -->
+      <button id="knopf-ton" type="button" class="knopf-icon" aria-pressed="false" title="Ton ausschalten">
+        <span class="nur-screenreader">Ton stumm schalten</span>
+        <svg class="icon-ton-an" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>
+        <svg class="icon-ton-aus" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+      </button>
     </div>
   </header>
 
@@ -144,10 +150,16 @@
               <div class="knopf-reihe">
                 <button id="knopf-nochmal" type="button" class="knopf knopf-primaer">Nochmal spielen</button>
                 <button id="knopf-zur-lobby" type="button" class="knopf knopf-sekundaer">Zur Lobby</button>
-                <button id="knopf-abmelden" type="button" class="knopf-text">Abmelden</button>
+                <div class="text-knoepfe">
+                  <button id="knopf-brett-ansehen" type="button" class="knopf-text">Brett ansehen</button>
+                  <button id="knopf-abmelden" type="button" class="knopf-text">Abmelden</button>
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- Nach "Brett ansehen": kleiner Knopf, um das Ergebnis wieder einzublenden -->
+          <button id="knopf-ergebnis" type="button" class="ergebnis-pille" hidden>Ergebnis anzeigen</button>
         </div>
 
         <aside class="panel" aria-label="Spielinformationen">
@@ -193,6 +205,12 @@
             Blau darf jetzt einmalig tauschen (Swap-Regel) oder normal setzen.
           </p>
           <p id="zugzaehler" class="zugzaehler"></p>
+
+          <section class="verlauf" aria-labelledby="verlauf-titel">
+            <h2 id="verlauf-titel" class="abschnitt-titel">Zugverlauf</h2>
+            <ol id="zugliste" class="zugliste" tabindex="0" aria-labelledby="verlauf-titel"></ol>
+          </section>
+
           <button id="knopf-aufgeben" type="button" class="knopf knopf-sekundaer">Aufgeben</button>
         </aside>
       </div>
