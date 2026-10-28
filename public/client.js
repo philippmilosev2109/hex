@@ -7,9 +7,40 @@ import { $, zeigeAnsicht, meldung, pruefeName, FARBNAME, RICHTUNG } from './ui.j
 import { sound } from './sound.js';
 import { konfetti } from './effekte.js';
 
+// ---------- Sitzung (zum Wiederverbinden) ----------
+// Nach dem Anmelden schickt der Server ein geheimes Sitzungs-Token. Es liegt im
+// sessionStorage (gilt nur für diesen Tab) und wird bei jedem (Neu-)Verbinden
+// mitgeschickt – so kommt man nach einem WLAN-Wackler oder F5 zurück ins Spiel.
+const SITZUNG_SCHLUESSEL = 'hex-sitzung';
+
+function ladeSitzung() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SITZUNG_SCHLUESSEL)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function speichereSitzung(sitzung) {
+  try {
+    sessionStorage.setItem(SITZUNG_SCHLUESSEL, JSON.stringify(sitzung));
+  } catch {
+    // Speicher gesperrt → Wiederverbinden klappt dann nur über neues Anmelden
+  }
+}
+
+function loescheSitzung() {
+  try {
+    sessionStorage.removeItem(SITZUNG_SCHLUESSEL);
+  } catch {
+    // nichts zu tun
+  }
+}
+
 // Verbindung zum Server, von dem die Seite geladen wurde.
 // Bricht sie ab, versucht Socket.io automatisch, sich neu zu verbinden.
-const socket = io();
+// auth wird bei JEDEM Verbindungsversuch neu gelesen.
+const socket = io({ auth: antwort => antwort({ session: ladeSitzung()?.session ?? null }) });
 
 // Was der Browser über die aktuelle Sitzung weiß
 const app = {
@@ -27,6 +58,9 @@ const app = {
   tickSekunde: null,   // letzte Sekunde, in der das Ticken kam (unter 10 s)
   revanche: 'offen',   // Revanche-Zustand nach Spielende (siehe zeigeRevanche)
   zuschauer: false,    // schauen wir gerade nur zu?
+  gegnerWeg: null,     // { name, bis } – Gegner verbindet gerade neu
+  gegnerTimer: null,   // aktualisiert den Countdown jede Sekunde
+  uebernommen: false,  // Sitzung läuft in einem anderen Tab weiter
 };
 
 const wenigerBewegung = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -93,9 +127,11 @@ $('#login-form').addEventListener('submit', event => {
   socket.emit('join', { name: pruefung.name });
 });
 
-// Angemeldet → in die Lobby (oder nach einem Verbindungsabbruch direkt weiter warten)
-socket.on('joined', ({ name }) => {
+// Angemeldet → Sitzung merken und in die Lobby
+// (oder nach einem Verbindungsabbruch direkt weiter warten)
+socket.on('joined', ({ name, session }) => {
   app.name = name;
+  speichereSitzung({ session, name });
   $('#knopf-spielen').disabled = false;
   $('#lobby-name').textContent = name;
   const naechstes = app.nachJoin;
@@ -112,6 +148,7 @@ socket.on('joinError', ({ reason }) => {
 socket.on('loggedOut', () => {
   app.name = null;
   app.laeuft = false;
+  loescheSitzung();
   wechsleZu('login');
 });
 
@@ -334,6 +371,8 @@ function oeffneSpielansicht(daten, { zuschauer }) {
   app.laeuft = true;
   app.zugGesendet = false;
   app.zustand = null;
+  app.gegnerWeg = null;
+  clearInterval(app.gegnerTimer);
 
   $('#spiel-id').textContent = daten.gameId;
   $('#privat-abzeichen').hidden = !daten.private;
@@ -358,6 +397,7 @@ function oeffneSpielansicht(daten, { zuschauer }) {
   clearTimeout(app.endeTimer);
   app.zeitWarnung = false;
   app.tickSekunde = null;
+  document.querySelectorAll('.konfetti').forEach(leinwand => leinwand.remove());
   brett.zuruecksetzen();
   $('#spielende').hidden = true;
   $('#knopf-ergebnis').hidden = true;
@@ -371,7 +411,11 @@ function oeffneSpielansicht(daten, { zuschauer }) {
   aktualisiereChat();
 }
 
-socket.on('gameStart', daten => oeffneSpielansicht(daten, { zuschauer: false }));
+// Neues Spiel – oder (resumed) zurück im laufenden Spiel nach einem Verbindungsabbruch
+socket.on('gameStart', daten => {
+  oeffneSpielansicht(daten, { zuschauer: false });
+  if (daten.resumed) for (const nachricht of daten.chat || []) zeigeChatNachricht(nachricht);
+});
 
 // Zuschauen: gleiche Ansicht, dazu der bisherige Chat; das Brett kommt mit "state"
 socket.on('spectateStart', daten => {
@@ -471,6 +515,13 @@ function aktualisiereStatus() {
       : 'Warte auf den Zug deines Gegners';
   }
 
+  // Verbindet ein Spieler gerade neu? Dann Countdown statt des normalen Hinweises
+  status.classList.toggle('status-warnung', Boolean(app.laeuft && app.gegnerWeg));
+  if (app.laeuft && app.gegnerWeg) {
+    const rest = Math.max(0, Math.ceil((app.gegnerWeg.bis - performance.now()) / 1000));
+    $('#status-text').textContent = `${app.gegnerWeg.name} verbindet neu … ${rest} s`;
+  }
+
   for (const farbe of ['red', 'blue']) {
     $(`#spieler-${farbe}`).classList.toggle('am-zug', app.laeuft && zustand?.turn === farbe);
   }
@@ -539,6 +590,8 @@ $('#knopf-aufgeben').addEventListener('click', () => {
 
 socket.on('gameOver', ende => {
   app.laeuft = false;
+  app.gegnerWeg = null;
+  clearInterval(app.gegnerTimer);
   setzeUhren(ende.clock, null, false);    // Uhren bleiben auf dem Endstand stehen
   const pfadDauer = brett.zeigeGewinnPfad(ende.path);
   aktualisiereStatus();
@@ -755,40 +808,105 @@ $('#knopf-zur-lobby').addEventListener('click', () => {
 });
 $('#knopf-abmelden').addEventListener('click', () => socket.emit('logout'));
 
-// ---------- Verbindung ----------
+// ---------- Verbindung und Wiederverbinden ----------
 
 socket.on('disconnect', () => {
+  if (app.uebernommen) return;    // Sitzung läuft in einem anderen Tab weiter
   $('#verbindung').hidden = false;
-  brett.setzeInteraktiv(false);
+  brett.setzeInteraktiv(false);   // die Uhr läuft weiter – wie auf dem Server
 });
 
 socket.on('connect', () => {
   $('#verbindung').hidden = true;
-  if (!app.name) return;   // war noch nicht angemeldet → nichts zu tun
+  // Ohne gespeicherte Sitzung (z. B. sessionStorage gesperrt) erkennt uns der
+  // Server nicht wieder → wie bei einer abgelaufenen Sitzung neu anmelden
+  if (app.name && !ladeSitzung()?.session) neuAnmeldenNachAbbruch();
+});
 
-  // Der Server hat uns beim Abbruch abgemeldet → mit gleichem Namen neu anmelden.
-  // Wer in der Warteschlange stand, stellt sich automatisch wieder an.
+// Der Server kennt unsere Sitzung noch – gleich folgt der aktuelle Stand
+// (laufendes Spiel mit gameStart + state, Wartebildschirm, Zuschauen …)
+socket.on('resumed', ({ name, session, state }) => {
+  app.name = name;
+  speichereSitzung({ session, name });
+  $('#lobby-name').textContent = name;
+  if (state === 'idle') wechsleZu('lobby');
+  meldung(state === 'imSpiel' ? 'Verbindung wiederhergestellt – weiter geht’s!' : 'Verbindung wiederhergestellt.');
+});
+
+// Sitzung unbekannt (Frist abgelaufen, Server neu gestartet …) → mit gleichem Namen neu anmelden
+socket.on('sessionInvalid', () => {
+  const gespeichert = ladeSitzung();
+  loescheSitzung();
+  if (!app.name && gespeichert?.name) app.name = gespeichert.name;   // nach dem Neuladen der Seite
+  neuAnmeldenNachAbbruch();
+});
+
+function neuAnmeldenNachAbbruch() {
+  if (!app.name) return;
+  // Wer in der Warteschlange stand, stellt sich automatisch wieder an
   const warWartend = app.ansicht === 'warten';
   app.nachJoin = warWartend && app.wartemodus === 'queue' ? 'queue' : null;
   socket.emit('join', { name: app.name });
   if (warWartend && app.wartemodus === 'private') {
     meldung('Die Verbindung war unterbrochen – dein privater Code gilt nicht mehr.', 'fehler');
   }
-
-  if (app.zuschauer && app.ansicht === 'spiel') {
-    // Zuschauer: einfach zurück in die Lobby
+  if (app.ansicht !== 'spiel') return;
+  if (app.zuschauer) {
     app.laeuft = false;
     clearInterval(uhrIntervall);
     wechsleZu('lobby');
     meldung('Die Verbindung war unterbrochen – Zuschauen beendet.', 'fehler');
   } else if (app.laeuft) {
+    // Gnadenfrist verpasst: Das Spiel ist verloren
     app.laeuft = false;
     clearInterval(uhrIntervall);
-    aktualisiereStatus();
+    beendeGegnerCountdown();
     setzeAufgebenZurueck();
     zeigeRevanche('unmoeglich');
     zeigeEndeKarte('Verbindung unterbrochen', 'Das Spiel wurde wegen des Verbindungsabbruchs beendet.', '', null);
+  } else {
+    zeigeRevanche('unmoeglich', 'Die Verbindung war kurz weg – keine Revanche möglich.');
   }
+}
+
+// Die gleiche Sitzung wurde in einem anderen Tab geöffnet → dieser Tab ist raus
+socket.on('sessionTakenOver', () => {
+  app.uebernommen = true;
+  $('#verbindung').hidden = true;
+  $('#uebernommen').hidden = false;
+  $('#knopf-neu-starten').focus();
+});
+$('#knopf-neu-starten').addEventListener('click', () => {
+  loescheSitzung();
+  location.reload();
+});
+
+// Gegner (bzw. für Zuschauer: ein Spieler) hat die Verbindung verloren → Countdown
+socket.on('opponentDisconnected', ({ name, color, seconds }) => {
+  if (color === app.farbe) return;
+  app.gegnerWeg = { name, bis: performance.now() + seconds * 1000 };
+  clearInterval(app.gegnerTimer);
+  app.gegnerTimer = setInterval(aktualisiereStatus, 1000);
+  aktualisiereStatus();
+});
+
+socket.on('opponentReconnected', ({ name, color }) => {
+  if (color === app.farbe) return;
+  beendeGegnerCountdown();
+  meldung(`${name} ist wieder da.`);
+});
+
+function beendeGegnerCountdown() {
+  app.gegnerWeg = null;
+  clearInterval(app.gegnerTimer);
+  aktualisiereStatus();
+}
+
+// Das Spiel endete, während unsere Verbindung weg war
+const GRUND_TEXT = { connect: 'Verbindung geschafft', resign: 'Aufgabe', timeout: 'Zeit abgelaufen', disconnect: 'Spiel verlassen' };
+socket.on('missedGameOver', ende => {
+  wechsleZu('lobby');
+  meldung(`Während deine Verbindung weg war, endete dein Spiel: ${FARBNAME[ende.winner]} gewinnt (${GRUND_TEXT[ende.reason]}).`, 'info', 8000);
 });
 
 // Start: Login zeigen, Fokus ins Namensfeld

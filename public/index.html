@@ -288,6 +288,18 @@
   <!-- Kurze Meldungen (z. B. "Feld ist belegt") -->
   <div id="meldungen" class="meldungen" aria-live="polite"></div>
 
+  <!-- Gleiche Sitzung in einem anderen Tab geöffnet -->
+  <div id="uebernommen" class="vollbild-hinweis" role="alertdialog" aria-labelledby="uebernommen-titel" aria-describedby="uebernommen-text" hidden>
+    <div class="karte karte-schmal">
+      <div class="logo-hex" aria-hidden="true">H</div>
+      <h2 id="uebernommen-titel">In einem anderen Tab geöffnet</h2>
+      <p id="uebernommen-text" class="untertitel">
+        Deine Sitzung läuft jetzt in einem anderen Tab weiter. In diesem Tab ist sie beendet.
+      </p>
+      <button id="knopf-neu-starten" type="button" class="knopf knopf-primaer">Hier neu anmelden</button>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="client.js"></script>
 </body>

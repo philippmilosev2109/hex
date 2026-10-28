@@ -2,9 +2,10 @@
 const { io: ioClient } = require('socket.io-client');
 const { erstelleServer } = require('../server');
 
-// Startet einen Server auf einem freien Port
+// Startet einen Server auf einem freien Port.
+// Die Gnadenfrist zum Wiederverbinden ist in Tests kurz (300 ms statt 30 s).
 async function starteTestServer(optionen = {}) {
-  const server = erstelleServer(optionen);
+  const server = erstelleServer({ reconnectMs: 300, ...optionen });
   const port = await server.starte(0, '127.0.0.1');
   server.url = `http://127.0.0.1:${port}`;
   return server;

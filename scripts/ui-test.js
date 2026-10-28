@@ -200,12 +200,25 @@ async function durchlauf(browser, url, groesse) {
   await rot.click('#knopf-abmelden');
   await rot.waitForSelector('#ansicht-login:not([hidden])');
 
-  // Verbindungsabbruch des Gegners → "Gegner hat das Spiel verlassen"
+  // Neues Spiel für die Verbindungstests
   await blau.click('#knopf-nochmal');
   await anmelden(rot, 'Milo');
   await warteAufSpielstart(rot);
   await warteAufSpielstart(blau);
+  const spielId = await rot.textContent('#spiel-id');
+  const rotSeite = (await rot.evaluate(() => !document.querySelector('#spieler-red .du').hidden)) ? rot : blau;
+  await zug(rotSeite, rotSeite === rot ? blau : rot, 5, 5, 1);
+
+  // F5 mitten im Spiel: Die Seite lädt neu und landet wieder im selben Spiel
+  await rot.reload();
+  await rot.waitForSelector('#ansicht-spiel:not([hidden])');
+  await rot.waitForFunction(() => document.querySelectorAll('.steine .stein').length === 1);
+  if (await rot.textContent('#spiel-id') !== spielId) throw new Error('Nach F5 in einem anderen Spiel gelandet');
+
+  // Tab geschlossen: Gegner sieht den Countdown, nach der Gnadenfrist ist das Spiel vorbei
   await rot.context().close();
+  await blau.waitForFunction(() => /verbindet neu/.test(document.querySelector('#status-text').textContent));
+  await foto(blau, `${groesse.name}-4d-gegner-verbindet-neu`);
   await blau.waitForSelector('#spielende:not([hidden])');
   const verlassen = await blau.textContent('#ende-text');
   if (!verlassen.includes('Gegner hat das Spiel verlassen')) throw new Error(`Abbruch nicht angezeigt: ${verlassen}`);
@@ -296,7 +309,7 @@ async function zeitSpiel(browser, groesse) {
 
 async function main() {
   fs.mkdirSync(ORDNER, { recursive: true });
-  const server = erstelleServer();
+  const server = erstelleServer({ reconnectMs: 2500 });   // kurze Gnadenfrist für den Test
   const port = await server.starte(0, '127.0.0.1');
   const url = `http://127.0.0.1:${port}`;
   const browser = await chromium.launch();

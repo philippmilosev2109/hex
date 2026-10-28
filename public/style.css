@@ -946,6 +946,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 .status-red { border-color: var(--rot); }
 .status-blue { border-color: var(--blau); }
+.status.status-warnung { border-color: var(--fokus); border-style: dashed; }
 .status-titel { font-size: 1.15rem; }
 .status-text { color: var(--text-2); }
 
@@ -1294,6 +1295,19 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 650;
   text-align: center;
 }
+
+/* Bildschirmfüllender Hinweis (Sitzung in anderem Tab) */
+.vollbild-hinweis {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--abdunkeln);
+  backdrop-filter: blur(3px);
+}
+.vollbild-hinweis h2 { margin-bottom: 8px; font-size: 1.5rem; }
 
 .verbindung-punkt {
   flex: none;

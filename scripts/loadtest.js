@@ -15,14 +15,15 @@ const { ROT, BLAU, nachbarn, findeGewinnPfad } = require('../game');
 const ANZAHL_BOTS = 40;
 const MAX_DAUER_MS = 120000;
 
-// Kürzere Bedenkzeit für den Lasttest (wird beim Erstellen des Servers gelesen)
-process.env.HEX_ZEIT_MS = process.env.HEX_ZEIT_MS || '10000';
+// Kürzere Zeiten für den Lasttest (werden beim Erstellen des Servers gelesen)
+process.env.HEX_ZEIT_MS = process.env.HEX_ZEIT_MS || '10000';          // Bedenkzeit
+process.env.HEX_RECONNECT_MS = process.env.HEX_RECONNECT_MS || '1500'; // Gnadenfrist
 
 // Verteilung der Verhaltensweisen (wird reihum vergeben)
 const VERHALTEN = [
   'normal', 'normal', 'normal',
   'aufgeber', 'abbrecher', 'chaot', 'zoegerer', 'flooder',
-  'privatErsteller', 'privatGast', 'schlaefer', 'spammer', 'zuschauer',
+  'privatErsteller', 'privatGast', 'schlaefer', 'spammer', 'zuschauer', 'wackler',
 ];
 const REAKTIONEN = ['👍', '😮', '😅', '🔥', '👏', '🤝'];
 
@@ -53,6 +54,8 @@ const statistik = {
   chatAbgelehnt: 0,      // vom Server gebremste/abgelehnte Nachrichten
   reaktionen: 0,
   zuschauSitzungen: 0,
+  wiederverbunden: 0,    // erfolgreiche Wiederverbindungen ins laufende Spiel
+  gegnerWeg: 0,          // "Gegner verbindet neu" gesehen
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -111,16 +114,27 @@ class Bot {
   start() {
     return new Promise(resolve => {
       this.beenden = resolve;
-      // Die Hälfte nutzt nur WebSocket, die andere startet wie ein Browser mit Polling
+      // Die Hälfte nutzt nur WebSocket, die andere startet wie ein Browser mit Polling.
+      // Nur Wackler verbinden sich nach einem Abbruch automatisch neu (mit ihrer Sitzung).
+      const wackler = this.verhalten === 'wackler';
       this.socket = ioClient(this.url, {
         forceNew: true,
-        reconnection: false,
+        reconnection: wackler,
+        reconnectionDelay: 100,
+        reconnectionDelayMax: 300,
         transports: this.nummer % 2 ? ['websocket'] : ['polling', 'websocket'],
       });
       const s = this.socket;
-      s.on('connect', () => s.emit('join', { name: this.name }));
+      s.on('connect', () => { if (!this.session) s.emit('join', { name: this.name }); });
       s.on('connect_error', err => { fehler(`${this.name}: connect_error ${err.message}`); this.fertigMachen(); });
-      s.on('joined', () => this.losSpielen());
+      s.on('joined', ({ session }) => {
+        this.session = session;
+        s.auth = { session };          // wird beim automatischen Neuverbinden mitgeschickt
+        this.losSpielen();
+      });
+      s.on('resumed', () => { statistik.wiederverbunden++; });
+      s.on('sessionInvalid', () => fehler(`${this.name}: Sitzung nach dem Wiederverbinden ungültig`));
+      s.on('opponentDisconnected', () => { statistik.gegnerWeg++; });
       s.on('joinError', ({ reason }) => {
         // Manipulierte Clients schicken absichtlich kaputte "join"-Daten → Ablehnung ist richtig
         if (!this.istManipuliert()) fehler(`${this.name}: joinError ${reason}`);
@@ -139,8 +153,22 @@ class Bot {
       s.on('state', zustand => this.neuerZustand(zustand));
       s.on('invalid', () => this.ungueltig());
       s.on('gameOver', ende => this.spielEnde(ende));
-      s.on('disconnect', () => this.fertigMachen());
+      s.on('missedGameOver', () => fehler(`${this.name}: Spiel endete während des kurzen Abbruchs`));
+      s.on('disconnect', () => {
+        // Gewollter Wackler: Die Verbindung kommt gleich von allein zurück
+        if (this.wackelt) return;
+        this.fertigMachen();
+      });
     });
+  }
+
+  // Wackler: mitten im Spiel einmal kurz die Verbindung kappen (wie ein WLAN-Wackler).
+  // Socket.io verbindet sich automatisch neu und schickt die Sitzung mit.
+  wackeln() {
+    this.gewackelt = true;
+    this.wackelt = true;
+    this.socket.once('connect', () => { this.wackelt = false; });
+    this.socket.io.engine.close();
   }
 
   // Nach dem Anmelden: je nach Verhalten privat spielen, zuschauen oder in die Warteschlange
@@ -294,6 +322,7 @@ class Bot {
       if (this.verhalten === 'aufgeber') return this.socket.emit('resign');
       if (this.verhalten === 'abbrecher') return this.verlassen(true);
       if (this.verhalten === 'schlaefer') return;   // zieht nicht mehr → Zeit läuft ab
+      if (this.verhalten === 'wackler' && !this.gewackelt) return this.wackeln();
     }
     clearTimeout(this.zugTimer);
     this.zugTimer = setTimeout(() => this.ziehe(), zufall(30, 70));
@@ -447,6 +476,9 @@ async function main() {
   if (statistik.privateSpiele === 0) fehler('Es wurde kein einziges privates Spiel gespielt');
   if (statistik.chatAbgelehnt === 0) fehler('Das Chat-Rate-Limit hat nie gegriffen');
   if (statistik.zuschauSitzungen === 0) fehler('Kein Bot hat zugeschaut');
+  const wackler = bots.filter(b => b.gewackelt).length;
+  if (wackler === 0) fehler('Kein Bot hat einen Verbindungsabbruch simuliert');
+  if (statistik.wiederverbunden < wackler) fehler(`Nur ${statistik.wiederverbunden} von ${wackler} Wacklern kamen zurück ins Spiel`);
 
   // Server muss aufgeräumt haben …
   const leer = { spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, zuschauer: 0, raeume: 0, timer: 0 };
@@ -492,6 +524,7 @@ async function main() {
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log(`Chat: ${statistik.chatEmpfangen} Nachrichten zugestellt, ${statistik.chatAbgelehnt} abgelehnt, ${statistik.reaktionen} Reaktionen`);
   console.log(`Zuschauen: ${statistik.zuschauSitzungen} Sitzungen, Rangliste: ${rangliste.length} Namen, ${siege} Siege = ${niederlagen} Niederlagen`);
+  console.log(`Wiederverbinden: ${statistik.wiederverbunden} von ${wackler} Wacklern zurück im Spiel, "Gegner verbindet neu" ${statistik.gegnerWeg}× gesehen`);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);

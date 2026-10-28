@@ -26,7 +26,8 @@ async function neuerClient() {
 async function anmelden(name) {
   const client = await neuerClient();
   client.emit('join', { name });
-  await client.warteAuf('joined');
+  const { session } = await client.warteAuf('joined');
+  client.session = session;   // für die Tests zum Wiederverbinden
   return client;
 }
 
@@ -63,7 +64,9 @@ describe('Anmelden', () => {
   test('gültiger Name wird getrimmt angenommen', async () => {
     const client = await neuerClient();
     client.emit('join', { name: '   Milo  ' });
-    expect(await client.warteAuf('joined')).toEqual({ name: 'Milo' });
+    const antwort = await client.warteAuf('joined');
+    expect(antwort.name).toBe('Milo');
+    expect(antwort.session).toMatch(/^[\w-]{20,}$/);    // geheimes Token zum Wiederverbinden
     expect(server.diagnose().spieler).toBe(1);
   });
 
@@ -627,6 +630,98 @@ describe('Rangliste', () => {
   }, 15000);
 });
 
+describe('Wiederverbinden', () => {
+  // Neuer Client mit gespeicherter Sitzung – wie ein neu geladener Tab
+  async function mitSitzung(session) {
+    const client = new TestClient(server.url, { auth: { session } });
+    clients.push(client);
+    await client.verbunden();
+    return client;
+  }
+
+  test('kurzer Abbruch im Spiel: zurück ins laufende Spiel mit Brett, Chat und Uhren', async () => {
+    const { rot, blau } = await spielStarten();
+    await zug(rot, blau, 5, 5);
+    blau.emit('chat', { text: 'bin gleich wieder da' });
+    await rot.warteAuf('chat');
+
+    rot.trennen();
+    expect(await blau.warteAuf('opponentDisconnected')).toMatchObject({ color: 'red' });
+
+    const neu = await mitSitzung(rot.session);
+    expect(await neu.warteAuf('resumed')).toMatchObject({ state: 'imSpiel' });
+    const start = await neu.warteAuf('gameStart');
+    expect(start).toMatchObject({ resumed: true, color: 'red' });
+    expect(start.chat.map(n => n.text)).toEqual(['bin gleich wieder da']);
+    const zustand = await neu.warteAuf('state');
+    expect(zustand.board[5][5]).toBe('red');
+    expect(zustand.turn).toBe('blue');
+    expect(zustand.clock.red).toBeGreaterThan(0);
+    expect(await blau.warteAuf('opponentReconnected')).toMatchObject({ color: 'red' });
+
+    // Die Gnadenfrist ist abgeschaltet, es geht ganz normal weiter
+    await pause(400);
+    expect(blau.hat('gameOver')).toBe(false);
+    await zug(blau, neu, 0, 0);
+    await zug(neu, blau, 1, 1);
+  });
+
+  test('Gnadenfrist abgelaufen: Spiel verloren, Sitzung ungültig', async () => {
+    const { rot, blau } = await spielStarten();
+    rot.trennen();
+    expect((await blau.warteAuf('gameOver')).reason).toBe('disconnect');
+    await (await mitSitzung(rot.session)).warteAuf('sessionInvalid');
+    expect(server.diagnose()).toMatchObject({ spieler: 1, sitzungen: 1 });
+  });
+
+  test('Spiel endet während des Abbruchs → nach dem Wiederverbinden kommt das Ergebnis', async () => {
+    const { rot, blau } = await spielStarten();
+    rot.trennen();
+    await blau.warteAuf('opponentDisconnected');
+    blau.emit('resign');
+    await blau.warteAuf('gameOver');
+    const neu = await mitSitzung(rot.session);
+    expect(await neu.warteAuf('resumed')).toMatchObject({ state: 'idle' });
+    expect(await neu.warteAuf('missedGameOver')).toMatchObject({ reason: 'resign', winner: 'red' });
+  });
+
+  test('die Uhr läuft während des Abbruchs weiter', async () => {
+    await server.stoppe();
+    server = await starteTestServer({ zeitMs: 400, reconnectMs: 5000 });
+    const { rot, blau } = await spielStarten();
+    rot.trennen();                       // Rot ist am Zug und weg → seine Uhr läuft ab
+    expect((await blau.warteAuf('gameOver', 3000)).reason).toBe('timeout');
+  });
+
+  test('gleiche Sitzung in einem zweiten Tab übernimmt, der erste Tab wird informiert', async () => {
+    const a = await anmelden('Anna');
+    const zweiterTab = await mitSitzung(a.session);
+    expect(await zweiterTab.warteAuf('resumed')).toMatchObject({ name: 'Anna', state: 'idle' });
+    await a.warteAuf('sessionTakenOver');
+    await warteBis(() => !a.socket.connected);
+    expect(server.diagnose()).toMatchObject({ spieler: 1, sitzungen: 1 });
+    zweiterTab.emit('queue');
+    await zweiterTab.warteAuf('waiting');
+  });
+
+  test('außerhalb eines Spiels wird sofort aufgeräumt; kaputte Sitzungen werden abgelehnt', async () => {
+    const a = await anmelden('Anna');
+    a.trennen();
+    await warteBis(() => server.diagnose().spieler === 0 && server.diagnose().sitzungen === 0);
+    await (await mitSitzung(a.session)).warteAuf('sessionInvalid');
+    for (const kaputt of ['x'.repeat(500), 42, { a: 1 }, '']) {
+      await (await mitSitzung(kaputt)).warteAuf('sessionInvalid');
+    }
+  });
+
+  test('Abmelden löscht die Sitzung', async () => {
+    const a = await anmelden('Anna');
+    a.emit('logout');
+    await a.warteAuf('loggedOut');
+    await (await mitSitzung(a.session)).warteAuf('sessionInvalid');
+  });
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();
@@ -761,9 +856,10 @@ describe('Spielende durch Aufgeben oder Verlassen', () => {
     expect(endeBlau.winner).toBe('blue');
   });
 
-  test('Verbindungsabbruch: der verbleibende Spieler gewinnt, Server räumt auf', async () => {
+  test('Verbindungsabbruch: nach der Gnadenfrist gewinnt der verbleibende Spieler', async () => {
     const { rot, blau } = await spielStarten();
     blau.trennen();
+    expect(await rot.warteAuf('opponentDisconnected')).toMatchObject({ color: 'blue' });
     const ende = await rot.warteAuf('gameOver');
     expect(ende.winner).toBe('red');
     expect(ende.reason).toBe('disconnect');
@@ -837,7 +933,7 @@ describe('Robustheit', () => {
     clients.forEach(c => c.trennen());
     await warteBis(() => server.diagnose().spieler === 0 && server.diagnose().timer === 0);
     expect(server.diagnose()).toEqual({
-      spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, zuschauer: 0, raeume: 0, timer: 0, fehler: 0,
+      spieler: 0, sitzungen: 0, warteschlange: 0, partien: 0, privateRaeume: 0, zuschauer: 0, raeume: 0, timer: 0, fehler: 0,
     });
   });
 });

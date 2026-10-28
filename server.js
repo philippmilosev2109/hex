@@ -52,6 +52,7 @@ function erstelleServer(optionen = {}) {
     lobbyZugVerzoegerungMs: 1000, // … nach einem Zug (Zugzahl in der Liste) etwas länger
     privatAblaufMs: zahlAusUmgebung('HEX_PRIVAT_MS', 10 * 60 * 1000), // Code gilt 10 Minuten
     zeitMs: zahlAusUmgebung('HEX_ZEIT_MS', 3 * 60 * 1000),            // Bedenkzeit je Spieler
+    reconnectMs: zahlAusUmgebung('HEX_RECONNECT_MS', 30 * 1000),      // Gnadenfrist nach Abbruch
     ...optionen,
   };
 
@@ -60,10 +61,13 @@ function erstelleServer(optionen = {}) {
   const httpServer = http.createServer(app);
   const io = new Server(httpServer, {
     maxHttpBufferSize: 16 * 1024,  // keine riesigen Nachrichten annehmen
+    pingInterval: 10000,           // tote Verbindungen nach spätestens ~15 s erkennen
+    pingTimeout: 5000,
   });
 
   // ---------- Zustand im Speicher ----------
   const spielerListe = new Map();  // Spieler-ID → Spieler
+  const sitzungen = new Map();     // Sitzungs-Token → Spieler (zum Wiederverbinden)
   const warteschlange = [];        // FIFO: wer zuerst kommt, spielt zuerst
   const partien = new Map();       // Spiel-ID → Partie
   const privateRaeume = new Map(); // Code → { code, ersteller, timer }
@@ -221,6 +225,21 @@ function erstelleServer(optionen = {}) {
     return { red: partie.spieler.red.name, blue: partie.spieler.blue.name };
   }
 
+  // Daten für "gameStart" aus Sicht eines Spielers (auch beim Wiederverbinden)
+  function spielStartDaten(partie, farbe) {
+    const sp = partie.spieler[farbe];
+    const gegner = partie.spieler[farbe === 'red' ? 'blue' : 'red'];
+    return {
+      gameId: partie.id,
+      color: farbe,
+      you: sp.name,
+      opponent: gegner.name,
+      players: namenVon(partie),
+      private: partie.privat,
+      timeMs: einstellungen.zeitMs,
+    };
+  }
+
   // Zwei Spieler in eine neue Partie setzen. Farben werden zufällig verteilt,
   // außer bei der Revanche (festeFarben: a spielt Rot, b spielt Blau).
   function starteSpiel(a, b, { privat = false, festeFarben = false } = {}) {
@@ -242,20 +261,11 @@ function erstelleServer(optionen = {}) {
 
     for (const farbe of ['red', 'blue']) {
       const sp = partie.spieler[farbe];
-      const gegner = partie.spieler[farbe === 'red' ? 'blue' : 'red'];
       sp.zustand = IM_SPIEL;
       sp.partie = partie;
       sp.farbe = farbe;
       sp.socket.join(partie.raum);
-      sp.socket.emit('gameStart', {
-        gameId: id,
-        color: farbe,
-        you: sp.name,
-        opponent: gegner.name,
-        players: namenVon(partie),
-        private: privat,
-        timeMs: einstellungen.zeitMs,
-      });
+      sp.socket.emit('gameStart', spielStartDaten(partie, farbe));
     }
     sendeZustand(partie);
     planeUhr(partie);
@@ -291,20 +301,22 @@ function erstelleServer(optionen = {}) {
     const verlierer = spiel.gewinner === 'red' ? 'blue' : 'red';
     zaehleErgebnis(partie.spieler[spiel.gewinner].name, true);
     zaehleErgebnis(partie.spieler[verlierer].name, false);
-    io.to(partie.raum).emit('gameOver', {
+    const ende = {
       winner: spiel.gewinner,
       reason: spiel.grund,
       path: spiel.gewinnPfad,
       moveCount: spiel.zuege.length,
       players: namenVon(partie),
       clock: uhrenVon(spiel),
-    });
+    };
+    io.to(partie.raum).emit('gameOver', ende);
     for (const sp of Object.values(partie.spieler)) {
       if (sp.partie !== partie) continue;
       sp.zustand = IDLE;
       sp.partie = null;
       sp.farbe = null;
       if (sp.socket) sp.socket.leave(partie.raum);
+      else sp.verpasstesEnde = ende;   // gerade getrennt → nach dem Wiederverbinden zeigen
     }
     // Zuschauer haben das Spielende gesehen und sind wieder frei
     for (const zuschauer of partie.zuschauer) {
@@ -519,6 +531,82 @@ function erstelleServer(optionen = {}) {
     sp.zustand = IDLE;
   }
 
+  // ---------- Abmelden, Verbindungsabbruch, Wiederverbinden ----------
+
+  // Spieler endgültig entfernen (Abmelden, Abbruch außerhalb eines Spiels, Frist abgelaufen)
+  function entferneSpieler(sp) {
+    stoppeTimer(sp.gnadenTimer);
+    sp.gnadenTimer = null;
+    verlasseAktivitaet(sp, 'disconnect');
+    beendeNachSpiel(sp);
+    spielerListe.delete(sp.id);
+    sitzungen.delete(sp.sitzung);
+    if (sp.socket) {
+      sp.socket.data.spieler = null;
+      sp.socket.leave('lobby');
+    }
+    sp.socket = null;
+    lobbyAktualisieren();
+  }
+
+  // Verbindung im Spiel weg: Das Spiel läuft weiter (auch die Uhr!), der Spieler
+  // hat eine Gnadenfrist. Kommt er nicht zurück, gilt das Spiel als verlassen.
+  function starteGnadenfrist(sp) {
+    const partie = sp.partie;
+    sp.socket = null;
+    sp.gnadenTimer = starteTimer(einstellungen.reconnectMs, 'gnadenfrist', () => {
+      sp.gnadenTimer = null;
+      if (!sp.socket) entferneSpieler(sp);
+    });
+    io.to(partie.raum).emit('opponentDisconnected', {
+      name: sp.name,
+      color: sp.farbe,
+      seconds: Math.round(einstellungen.reconnectMs / 1000),
+    });
+  }
+
+  // Ein Browser meldet sich mit einer bekannten Sitzung (neu) an:
+  // Der neue Socket übernimmt den Spieler und bekommt seinen aktuellen Stand.
+  function uebernehmeSitzung(sp, socket) {
+    const alt = sp.socket;
+    const warGetrennt = !alt;
+    if (alt && alt !== socket) {
+      // Gleiche Sitzung in einem zweiten Tab: Der neue Tab gewinnt
+      alt.data.spieler = null;
+      alt.emit('sessionTakenOver');
+      alt.disconnect(true);
+    }
+    stoppeTimer(sp.gnadenTimer);
+    sp.gnadenTimer = null;
+    sp.socket = socket;
+    socket.data.spieler = sp;
+    socket.join('lobby');
+    socket.emit('resumed', { name: sp.name, session: sp.sitzung, state: sp.zustand });
+
+    if (sp.zustand === IM_SPIEL) {
+      const partie = sp.partie;
+      socket.join(partie.raum);
+      socket.emit('gameStart', { ...spielStartDaten(partie, sp.farbe), resumed: true, chat: partie.chat });
+      socket.emit('state', zustandFuer(partie));
+      socket.emit('spectators', { count: partie.zuschauer.size });
+      if (warGetrennt) socket.to(partie.raum).emit('opponentReconnected', { name: sp.name, color: sp.farbe });
+    } else if (sp.zustand === WARTEND) {
+      socket.emit('waiting', sp.privatCode
+        ? { mode: 'private', code: sp.privatCode, expiresInMs: einstellungen.privatAblaufMs }
+        : { mode: 'queue' });
+    } else if (sp.zustand === ZUSCHAUEND) {
+      const partie = sp.zuschauerVon;
+      socket.join(partie.raum);
+      socket.emit('spectateStart', { gameId: partie.id, players: namenVon(partie), timeMs: einstellungen.zeitMs, chat: partie.chat });
+      socket.emit('state', zustandFuer(partie));
+    } else if (sp.verpasstesEnde) {
+      // Das Spiel endete, während die Verbindung weg war
+      socket.emit('missedGameOver', sp.verpasstesEnde);
+    }
+    sp.verpasstesEnde = null;
+    socket.emit('lobby', lobbyDaten());
+  }
+
   // ---------- Verbindungen ----------
 
   io.on('connection', socket => {
@@ -539,6 +627,15 @@ function erstelleServer(optionen = {}) {
     const an = (ereignis, handler) => socket.on(ereignis, sicher(ereignis, handler));
     const spieler = () => socket.data.spieler || null;
 
+    // Wiederverbinden: Bringt der Browser eine gültige Sitzung mit, geht es genau
+    // dort weiter, wo der Spieler war. Unbekannte Sitzung → "sessionInvalid".
+    const token = socket.handshake.auth ? socket.handshake.auth.session : undefined;
+    if (token !== undefined && token !== null) {
+      const sp = typeof token === 'string' && token.length <= 64 ? sitzungen.get(token) : undefined;
+      if (sp) sicher('wiederverbinden', uebernehmeSitzung)(sp, socket);
+      else socket.emit('sessionInvalid');
+    }
+
     // Anmelden mit Namen
     an('join', daten => {
       if (spieler()) return;                          // doppeltes join ignorieren
@@ -549,6 +646,7 @@ function erstelleServer(optionen = {}) {
       }
       const sp = {
         id: crypto.randomUUID(),
+        sitzung: crypto.randomBytes(18).toString('base64url'), // geheimes Token zum Wiederverbinden
         name,
         socket,
         zustand: IDLE,
@@ -557,13 +655,16 @@ function erstelleServer(optionen = {}) {
         privatCode: null,     // Code des eigenen privaten Raums (nur beim Warten)
         nachSpiel: null,      // nach Spielende: { gegner, farbe, revanche, privat }
         zuschauerVon: null,   // Partie, der gerade zugeschaut wird
+        gnadenTimer: null,    // läuft, solange die Verbindung im Spiel weg ist
+        verpasstesEnde: null, // Spielende, das während eines Abbruchs passiert ist
         letzterChat: 0,       // Zeitpunkt der letzten Chat-Nachricht (Rate-Limit)
         letzteReaktion: 0,
       };
       spielerListe.set(sp.id, sp);
+      sitzungen.set(sp.sitzung, sp);
       socket.data.spieler = sp;
       socket.join('lobby');
-      socket.emit('joined', { name });
+      socket.emit('joined', { name, session: sp.sitzung });
       socket.emit('lobby', lobbyDaten());
       lobbyAktualisieren();
     });
@@ -722,28 +823,21 @@ function erstelleServer(optionen = {}) {
       verlasseAktivitaet(sp, 'resign');
     });
 
-    // Abmelden: alles verlassen, Name vergessen (Socket bleibt verbunden)
+    // Abmelden: alles verlassen, Name und Sitzung vergessen (Socket bleibt verbunden)
     an('logout', () => {
       const sp = spieler();
       if (!sp) return;
-      verlasseAktivitaet(sp, 'disconnect');
-      beendeNachSpiel(sp);
-      spielerListe.delete(sp.id);
-      socket.data.spieler = null;
-      socket.leave('lobby');
+      entferneSpieler(sp);
       socket.emit('loggedOut');
-      lobbyAktualisieren();
     });
 
-    // Verbindung weg (Tab zu, WLAN weg …): vollständig aufräumen
+    // Verbindung weg (Tab zu, WLAN weg, Neuladen …):
+    // Im Spiel gibt es eine Gnadenfrist zum Wiederverbinden, sonst wird sofort aufgeräumt.
     socket.on('disconnect', sicher('disconnect', () => {
       const sp = spieler();
-      if (!sp) return;
-      verlasseAktivitaet(sp, 'disconnect');
-      beendeNachSpiel(sp);
-      sp.socket = null;
-      spielerListe.delete(sp.id);
-      lobbyAktualisieren();
+      if (!sp || sp.socket !== socket) return;   // Sitzung wurde schon übernommen
+      if (sp.zustand === IM_SPIEL) starteGnadenfrist(sp);
+      else entferneSpieler(sp);
     }));
   });
 
@@ -775,6 +869,7 @@ function erstelleServer(optionen = {}) {
     for (const partie of partien.values()) zuschauer += partie.zuschauer.size;
     return {
       spieler: spielerListe.size,
+      sitzungen: sitzungen.size,
       warteschlange: warteschlange.length,
       partien: partien.size,
       privateRaeume: privateRaeume.size,

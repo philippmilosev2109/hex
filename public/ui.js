@@ -14,12 +14,12 @@ export function zeigeAnsicht(name) {
 }
 
 // Kurze Meldung, die nach ein paar Sekunden von selbst verschwindet
-export function meldung(text, art = 'info') {
+export function meldung(text, art = 'info', dauer = 4000) {
   const box = document.createElement('div');
   box.className = `meldung meldung-${art}`;
   box.textContent = text;
   $('#meldungen').appendChild(box);
-  setTimeout(() => box.remove(), 4000);
+  setTimeout(() => box.remove(), dauer);
 }
 
 // Name wie auf dem Server prüfen: getrimmt, 1–20 Zeichen
