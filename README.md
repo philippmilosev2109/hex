@@ -53,8 +53,8 @@ baut, gewinnt. Ein Unentschieden ist unmöglich.
 
 ### Barrierefreiheit und Design
 
-- Dunkles Theme nach den Mockups, alle Farben zentral als CSS-Variablen in `:root`
-- **Kontrast nach WCAG AA** für alle Texte (≥ 4,5 : 1) und Grafiken (≥ 3 : 1) – automatisch geprüft mit `npm run contrast`
+- **Helles und dunkles Design** – umschaltbar über Sonne/Mond in der Kopfzeile, die Wahl merkt sich der Browser; ohne eigene Wahl gilt die Einstellung des Betriebssystems. Alle Farben zentral als CSS-Variablen (`:root` = dunkel, `:root[data-theme="hell"]` = hell)
+- **Kontrast nach WCAG AA** für alle Texte (≥ 4,5 : 1) und Grafiken (≥ 3 : 1) in beiden Designs – automatisch geprüft mit `npm run contrast`
 - Rot und Blau nie nur über die Farbe: Steine tragen ein Richtungszeichen (Rot ↕, Blau ↔), Texte nennen die Farbe
 - Komplett per **Tastatur** bedienbar – auch das Brett (Pfeiltasten + Enter, Ansage für Screenreader)
 - Sichtbare Fokus-Rahmen, `prefers-reduced-motion` schaltet Animationen ab
@@ -127,8 +127,8 @@ Zum Ausprobieren auf einem einzigen Rechner reichen zwei Browserfenster (z. B. e
 |---|---|
 | `npm test` | **Jest**, 94 Tests: Spiellogik (`game.js`: Sieg Rot/Blau, Lücken, Ränder, Zickzack, Gewinnpfad, volles Brett, ungültige Züge, Swap-Regel, Zeitkonto) und Server über echte Socket.io-Verbindungen (Matching, private Räume, Zugprüfung, Aufgabe, Timeout, Revanche, Chat, Zuschauer, Rangliste, Disconnect, Reconnect, kaputte Daten, Rate-Limit) |
 | `npm run loadtest` | **Lasttest** mit 40 Bots gleichzeitig: Schnellspiele und private Räume, zufällige gültige Züge bis zum Sieg, Aufgeben, Trennen mitten im Spiel, Wiederverbinden, Zuschauen, Chat-Spam, kaputte Daten, Rate-Limit-Flut. Danach: alle Spiele korrekt beendet, alle Gewinnpfade gültig, Rangliste stimmig, keine Server-Fehler, alle Maps/Timer/Räume leer, Server nimmt weiter Spieler an |
-| `npm run contrast` | **Kontrastprüfung** aller Farbpaare aus den CSS-Variablen nach WCAG AA, außerdem: keine festen Farben außerhalb von `:root` |
-| `npm run uitest` | **UI-Test mit Playwright** (nur Testwerkzeug): zwei bzw. drei Browser spielen komplette Partien auf 1280 × 800, 1024 × 768 und 375 × 812, inklusive privatem Spiel, Swap, Chat, Zuschauen, Revanche, F5 und Tastaturbedienung. Screenshots landen in `screenshots/`, jede Fehlermeldung in der Browser-Konsole lässt den Test scheitern |
+| `npm run contrast` | **Kontrastprüfung** aller Farbpaare aus den CSS-Variablen nach WCAG AA – für das dunkle und das helle Design, außerdem: keine festen Farben außerhalb der beiden Farbblöcke |
+| `npm run uitest` | **UI-Test mit Playwright** (nur Testwerkzeug): zwei bzw. drei Browser spielen komplette Partien auf 1280 × 800, 1024 × 768 und 375 × 812 (dunkel) sowie 1280 × 800 und 375 × 812 (hell), inklusive privatem Spiel, Swap, Chat, Zuschauen, Revanche, F5 und Tastaturbedienung. Screenshots landen in `screenshots/`, jede Fehlermeldung in der Browser-Konsole lässt den Test scheitern |
 
 Der UI-Test braucht einmalig den Browser von Playwright: `npx playwright install chromium`.
 Lasttest und UI-Test verkürzen die Zeiten (Bedenkzeit, Gnadenfrist) automatisch.
@@ -143,7 +143,8 @@ hex/
 ├── game.js              Reine Spiellogik ohne Netzwerk: Brett, Zugprüfung, BFS-Sieg, Swap-Regel, Schachuhr
 ├── public/
 │   ├── index.html       Single Page mit allen Ansichten (Login, Lobby, Warten, Spiel, Spielende)
-│   ├── style.css        Dunkles Theme, alle Farben als CSS-Variablen
+│   ├── style.css        Dunkles und helles Design, alle Farben als CSS-Variablen
+│   ├── design.js        Hell/Dunkel umschalten und merken (läuft schon im <head>)
 │   ├── client.js        Ablauf im Browser: Socket-Ereignisse, Ansichten, Status, Chat, Uhren
 │   ├── board.js         Spielbrett als SVG: Felder, Ränder, Koordinaten, Steine, Animationen, Tastatur
 │   ├── ui.js            Kleine Helfer: Ansicht wechseln, Meldungen, Namensprüfung

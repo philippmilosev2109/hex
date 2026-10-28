@@ -1,6 +1,7 @@
 /* style.css – Styling für Hex
-   Dunkles Theme nach den Mockups der Spielidee. Alle Farben stehen zentral
-   in :root – scripts/contrast.js prüft die Textfarben auf WCAG-AA-Kontrast. */
+   Zwei Designs: dunkel (Standard, nach den Mockups der Spielidee) und hell.
+   Alle Farben stehen zentral in :root bzw. :root[data-theme="hell"] –
+   scripts/contrast.js prüft beide Designs auf WCAG-AA-Kontrast. */
 
 /* ==========================================================
    1. Farben und Maße
@@ -35,6 +36,8 @@
   --stein-rot-schatten: #7a000e;
   --stein-blau-licht: #a2c0ff;
   --stein-blau-schatten: #0f2d74;
+  --stein-rot-rand: #ff919c;    /* Kante des Steins: muss sich vom Feld abheben */
+  --stein-blau-rand: #a2c0ff;
   --stein-zeichen: rgba(255, 255, 255, 0.5);
 
   /* Brett */
@@ -63,6 +66,59 @@
   --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
   --schrift: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --kopf-hoehe: 56px;
+}
+
+/* Helles Design: überschreibt nur die Farben, alle Maße bleiben gleich.
+   design.js setzt data-theme="hell" am <html>-Element. */
+:root[data-theme="hell"] {
+  color-scheme: light;          /* helle Scrollbalken und Formular-Elemente */
+
+  --bg: #eef0f4;
+  --bg-licht: #ffffff;
+  --flaeche: #ffffff;
+  --flaeche-oben: #fbfcfd;
+  --flaeche-hoch: #edf0f4;
+  --flaeche-tief: #f5f6f9;
+  --rahmen: #d3d8e1;
+  --rahmen-stark: #7c8596;
+
+  --text: #161a22;
+  --text-2: #4d5768;
+
+  --rot: #e2001a;
+  --rot-dunkel: #b80015;
+  --rot-text: #c00016;          /* auf hellem Grund muss Rot dunkler sein */
+  --uhr-knapp: #fde2e5;
+  --blau: #2563eb;
+  --blau-dunkel: #1c4fc7;
+  --blau-text: #1d4ed8;
+  --auf-farbe: #ffffff;
+
+  --stein-rot-licht: #ff919c;
+  --stein-rot-schatten: #7a000e;
+  --stein-blau-licht: #a2c0ff;
+  --stein-blau-schatten: #0f2d74;
+  --stein-rot-rand: #7a000e;    /* auf hellem Feld: dunkle Kante statt heller */
+  --stein-blau-rand: #0f2d74;
+  --stein-zeichen: rgba(255, 255, 255, 0.55);
+
+  --feld: #d5dae3;
+  --feld-linie: #f7f8fa;
+  --feld-hover-red: #f4b8c0;
+  --feld-hover-blue: #b9cdf7;
+  --gewinn: #161a22;
+  --gewinn-linie: rgba(22, 26, 34, 0.75);
+  --letzter-zug: #161a22;       /* Gelb wäre auf hellem Feld kaum zu sehen */
+
+  --online: #15803d;
+  --online-schein: rgba(21, 128, 61, 0.18);
+  --fokus: #a64b00;
+  --warnung: #8a5a00;
+  --muster: rgba(22, 26, 34, 0.05);
+  --abdunkeln: rgba(22, 26, 34, 0.35);
+  --schatten-farbe: rgba(22, 30, 48, 0.14);
+  --glanz-kante: rgba(255, 255, 255, 0.8);
+  --rot-schein: rgba(226, 0, 26, 0.2);
 }
 
 /* ==========================================================
@@ -174,6 +230,11 @@ h1:focus, h2:focus { outline: none; }
 .knopf-icon .icon-ton-aus,
 .knopf-icon[aria-pressed="true"] .icon-ton-an { display: none; }
 .knopf-icon[aria-pressed="true"] .icon-ton-aus { display: block; }
+
+/* Design-Knopf: im dunklen Design eine Sonne, im hellen ein Mond */
+.knopf-icon .icon-mond,
+.knopf-icon[aria-pressed="true"] .icon-sonne { display: none; }
+.knopf-icon[aria-pressed="true"] .icon-mond { display: block; }
 
 .kopf-name {
   max-width: 220px;
@@ -703,8 +764,8 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 /* Heller Rand in der eigenen Farbe: hebt den Stein deutlich (≥ 3:1) vom Feld ab */
 .stein { pointer-events: none; }
 .stein circle { stroke-width: 1.4; }
-.stein.red circle { stroke: var(--stein-rot-licht); }
-.stein.blue circle { stroke: var(--stein-blau-licht); }
+.stein.red circle { stroke: var(--stein-rot-rand); }
+.stein.blue circle { stroke: var(--stein-blau-rand); }
 
 /* Animationen wirken auf die innere Gruppe, die äußere trägt die Position */
 .stein-innen {

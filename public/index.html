@@ -8,6 +8,8 @@
   <title>Hex</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,4 90,27 90,73 50,96 10,73 10,27' fill='%23e2001a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
+  <!-- Bewusst kein Modul und ohne defer: setzt das Design, bevor die Seite gezeichnet wird -->
+  <script src="design.js"></script>
 </head>
 <body>
   <!-- Hinweis bei Verbindungsabbruch (wird von client.js ein- und ausgeblendet) -->
@@ -23,6 +25,12 @@
     </div>
     <div class="kopf-rechts">
       <span id="kopf-name" class="kopf-name" hidden></span>
+      <!-- Helles/dunkles Design (Einstellung wird im Browser gespeichert, siehe design.js) -->
+      <button id="knopf-design" type="button" class="knopf-icon" aria-pressed="false" title="Helles Design">
+        <span class="nur-screenreader">Helles Design</span>
+        <svg class="icon-sonne" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-mond" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
       <!-- Ton an/aus (Einstellung wird im Browser gespeichert) -->
       <button id="knopf-ton" type="button" class="knopf-icon" aria-pressed="false" title="Ton ausschalten">
         <span class="nur-screenreader">Ton stumm schalten</span>

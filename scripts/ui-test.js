@@ -12,17 +12,23 @@ const { chromium } = require('playwright');
 const { erstelleServer } = require('../server');
 
 const ORDNER = path.join(__dirname, '..', 'screenshots');
+// design = Farbschema des simulierten Betriebssystems (design.js richtet sich danach)
 const GROESSEN = [
-  { name: 'desktop', width: 1280, height: 800 },
-  { name: 'klein', width: 1024, height: 768 },
-  { name: 'handy', width: 375, height: 812 },
+  { name: 'desktop', width: 1280, height: 800, design: 'dark' },
+  { name: 'klein', width: 1024, height: 768, design: 'dark' },
+  { name: 'handy', width: 375, height: 812, design: 'dark' },
+  { name: 'hell-desktop', width: 1280, height: 800, design: 'light' },
+  { name: 'hell-handy', width: 375, height: 812, design: 'light' },
 ];
 
 const konsolenFehler = [];
 const offeneSeiten = [];   // für Fehler-Screenshots
 
 async function neueSeite(browser, url, groesse, wer) {
-  const kontext = await browser.newContext({ viewport: { width: groesse.width, height: groesse.height } });
+  const kontext = await browser.newContext({
+    viewport: { width: groesse.width, height: groesse.height },
+    colorScheme: groesse.design,
+  });
   const seite = await kontext.newPage();
   offeneSeiten.push({ seite, wer });
   seite.on('console', nachricht => {
@@ -30,6 +36,10 @@ async function neueSeite(browser, url, groesse, wer) {
   });
   seite.on('pageerror', fehler => konsolenFehler.push(`${wer}: ${fehler.message}`));
   await seite.goto(url);
+  // Ohne eigene Wahl muss die Seite dem Farbschema des Systems folgen
+  const erwartet = groesse.design === 'light' ? 'hell' : 'dunkel';
+  const design = await seite.evaluate(() => document.documentElement.dataset.theme);
+  if (design !== erwartet) throw new Error(`${wer}: Design "${design}" statt "${erwartet}"`);
   return seite;
 }
 
@@ -155,7 +165,7 @@ async function durchlauf(browser, url, groesse) {
   for (let i = 0; i < 5; i++) await rot.keyboard.press('ArrowLeft');
   const ansage = await rot.textContent('#brett-ansage');
   if (!ansage.startsWith('A5: frei')) throw new Error(`Falsche Tastatur-Ansage: ${ansage}`);
-  if (groesse.name === 'desktop') await foto(rot, `${groesse.name}-3e-tastatur`);
+  if (groesse.width >= 1280) await foto(rot, `${groesse.name}-3e-tastatur`);
   await rot.keyboard.press('Enter');
   steine++;
   for (const seite of [rot, blau]) {

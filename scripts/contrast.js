@@ -1,6 +1,7 @@
 // Kontrast-Prüfung nach WCAG 2.1 (Stufe AA)
-// Liest die Farben aus den CSS-Variablen in public/style.css (:root) und prüft
-// alle Farbpaare, die in der Oberfläche tatsächlich vorkommen.
+// Liest die Farben aus den CSS-Variablen in public/style.css und prüft alle
+// Farbpaare, die in der Oberfläche tatsächlich vorkommen – und zwar für BEIDE
+// Designs: dunkel (:root) und hell (:root[data-theme="hell"] überschreibt :root).
 //   Text:          mindestens 4,5 : 1
 //   große Schrift: mindestens 3 : 1   (ab 24 px oder 18,66 px fett)
 //   Grafik/Rahmen: mindestens 3 : 1   (z. B. Steine, Fokus-Rahmen, Brettränder)
@@ -66,21 +67,36 @@ const PAARE = [
   ['--letzter-zug', '--blau', GRAFIK, 'Ring um den letzten Zug (an blauem Stein)'],
   ['--rot', '--flaeche-tief', GRAFIK, 'Roter Punkt im Zugverlauf'],
   ['--blau', '--flaeche-tief', GRAFIK, 'Blauer Punkt im Zugverlauf'],
-  ['--stein-rot-licht', '--feld', GRAFIK, 'Roter Stein: Kante gegen das Feld'],
-  ['--stein-blau-licht', '--feld', GRAFIK, 'Blauer Stein: Kante gegen das Feld'],
+  ['--stein-rot-rand', '--feld', GRAFIK, 'Roter Stein: Kante gegen das Feld'],
+  ['--stein-blau-rand', '--feld', GRAFIK, 'Blauer Stein: Kante gegen das Feld'],
+  ['--gewinn', '--feld', GRAFIK, 'Rand der Steine im Gewinnpfad gegen das Feld'],
+  ['--fokus', '--feld', GRAFIK, 'Tastatur-Rahmen um das gewählte Feld'],
   ['--auf-farbe', '--rot', GRAFIK, 'Symbol ↕ im roten Spieler-Sechseck'],
   ['--auf-farbe', '--blau', GRAFIK, 'Symbol ↔ im blauen Spieler-Sechseck'],
 ];
 
 // ---------- Farben aus dem CSS lesen ----------
 const css = fs.readFileSync(CSS_DATEI, 'utf8');
-const rootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/);
-if (!rootBlock) throw new Error(':root-Block nicht gefunden');
+const dunkelBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/);
+const hellBlock = css.match(/:root\[data-theme="hell"\]\s*\{([\s\S]*?)\n\}/);
+if (!dunkelBlock) throw new Error(':root-Block nicht gefunden');
+if (!hellBlock) throw new Error(':root[data-theme="hell"]-Block nicht gefunden');
 
-const variablen = {};
-for (const [, name, wert] of rootBlock[1].matchAll(/--([\w-]+)\s*:\s*(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})\s*;/g)) {
-  variablen[`--${name}`] = wert;
+// Alle Variablen mit Hex-Farbwert aus einem Block lesen
+function leseFarben(block) {
+  const farben = {};
+  for (const [, name, wert] of block.matchAll(/--([\w-]+)\s*:\s*(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})\s*;/g)) {
+    farben[`--${name}`] = wert;
+  }
+  return farben;
 }
+
+const dunkel = leseFarben(dunkelBlock[1]);
+// Das helle Design übernimmt alles, was es nicht selbst überschreibt, vom dunklen
+const DESIGNS = [
+  ['Dunkles Design', dunkel],
+  ['Helles Design', { ...dunkel, ...leseFarben(hellBlock[1]) }],
+];
 
 function hexZuRgb(hex) {
   let h = hex.slice(1);
@@ -104,29 +120,32 @@ function kontrast(a, b) {
 
 // ---------- Prüfen ----------
 let fehler = 0;
-console.log('Kontrast-Prüfung (WCAG 2.1 AA)\n');
-for (const [vorne, hinten, minimum, wo] of PAARE) {
-  const a = variablen[vorne];
-  const b = variablen[hinten];
-  if (!a || !b) {
-    console.log(`✗ Unbekannte Variable: ${!a ? vorne : hinten} (${wo})`);
-    fehler++;
-    continue;
+console.log('Kontrast-Prüfung (WCAG 2.1 AA)');
+for (const [designName, variablen] of DESIGNS) {
+  console.log(`\n== ${designName} ==`);
+  for (const [vorne, hinten, minimum, wo] of PAARE) {
+    const a = variablen[vorne];
+    const b = variablen[hinten];
+    if (!a || !b) {
+      console.log(`✗ Unbekannte Variable: ${!a ? vorne : hinten} (${wo})`);
+      fehler++;
+      continue;
+    }
+    const wert = kontrast(a, b);
+    const ok = wert >= minimum;
+    if (!ok) fehler++;
+    const zeile = `${ok ? '✓' : '✗'} ${wert.toFixed(2).padStart(5)} : 1  (min ${minimum})  ${vorne} ${a} auf ${hinten} ${b}`;
+    console.log(`${zeile.padEnd(84)} ${wo}`);
   }
-  const wert = kontrast(a, b);
-  const ok = wert >= minimum;
-  if (!ok) fehler++;
-  const zeile = `${ok ? '✓' : '✗'} ${wert.toFixed(2).padStart(5)} : 1  (min ${minimum})  ${vorne} ${a} auf ${hinten} ${b}`;
-  console.log(`${zeile.padEnd(84)} ${wo}`);
 }
 
-// Feste Farben außerhalb von :root aufspüren (Farben gehören in Variablen)
-const ohneRoot = css.replace(rootBlock[0], '').replace(/url\("data:[^"]*"\)/g, '');
+// Feste Farben außerhalb der beiden Farbblöcke aufspüren (Farben gehören in Variablen)
+const ohneRoot = css.replace(dunkelBlock[0], '').replace(hellBlock[0], '').replace(/url\("data:[^"]*"\)/g, '');
 const festeFarben = ohneRoot.match(/#[0-9a-fA-F]{3,6}\b|rgba?\(/g) || [];
 if (festeFarben.length) {
   console.log(`\n✗ ${festeFarben.length} feste Farbe(n) außerhalb von :root: ${[...new Set(festeFarben)].join(', ')}`);
   fehler++;
 }
 
-console.log(fehler ? `\n${fehler} Problem(e) gefunden.` : `\nAlle ${PAARE.length} Farbpaare bestehen.`);
+console.log(fehler ? `\n${fehler} Problem(e) gefunden.` : `\nAlle ${PAARE.length} Farbpaare bestehen in beiden Designs.`);
 process.exit(fehler ? 1 : 0);
