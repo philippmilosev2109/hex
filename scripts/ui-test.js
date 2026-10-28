@@ -205,6 +205,32 @@ async function privatesSpiel(browser, url, groesse) {
   await b.context().close();
 }
 
+// Schachuhr: Server mit nur 5 Sekunden Bedenkzeit → Uhr rot, dann Ende durch Zeitablauf
+async function zeitSpiel(browser, groesse) {
+  const server = erstelleServer({ zeitMs: 5000 });
+  const port = await server.starte(0, '127.0.0.1');
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    const a = await neueSeite(browser, url, groesse, `${groesse.name}/Uhr-A`);
+    const b = await neueSeite(browser, url, groesse, `${groesse.name}/Uhr-B`);
+    await anmelden(a, 'Ada');
+    await anmelden(b, 'Bo');
+    await warteAufSpielstart(a);
+    await warteAufSpielstart(b);
+    await a.waitForSelector('#uhr-red.knapp');
+    await a.waitForTimeout(1200);
+    await foto(a, `${groesse.name}-3b-uhr-knapp`);
+    await a.waitForSelector('#spielende:not([hidden])', { timeout: 10000 });
+    const text = await a.textContent('#ende-text');
+    if (!/Zeit/.test(text)) throw new Error(`Zeitablauf nicht angezeigt: ${text}`);
+    await foto(a, `${groesse.name}-4b-zeit-abgelaufen`);
+    await a.context().close();
+    await b.context().close();
+  } finally {
+    await server.stoppe();
+  }
+}
+
 async function main() {
   fs.mkdirSync(ORDNER, { recursive: true });
   const server = erstelleServer();
@@ -215,6 +241,7 @@ async function main() {
     for (const groesse of GROESSEN) {
       await durchlauf(browser, url, groesse);
       await privatesSpiel(browser, url, groesse);
+      await zeitSpiel(browser, groesse);
       console.log(`✓ ${groesse.name} (${groesse.width}×${groesse.height})`);
     }
     if (konsolenFehler.length) throw new Error(`Fehler in der Browser-Konsole:\n${konsolenFehler.join('\n')}`);

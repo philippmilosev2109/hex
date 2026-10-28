@@ -38,6 +38,7 @@ function erstelleServer(optionen = {}) {
     maxEventsProSekunde: 20,     // Rate-Limit pro Socket
     lobbyVerzoegerungMs: 100,    // Lobby-Updates werden kurz gesammelt
     privatAblaufMs: zahlAusUmgebung('HEX_PRIVAT_MS', 10 * 60 * 1000), // Code gilt 10 Minuten
+    zeitMs: zahlAusUmgebung('HEX_ZEIT_MS', 3 * 60 * 1000),            // Bedenkzeit je Spieler
     ...optionen,
   };
 
@@ -127,6 +128,12 @@ function erstelleServer(optionen = {}) {
 
   // ---------- Spielablauf ----------
 
+  // Restzeit beider Uhren in Millisekunden (jetzt gerade)
+  function uhrenVon(spiel) {
+    const jetzt = Date.now();
+    return { red: spiel.restzeit('red', jetzt), blue: spiel.restzeit('blue', jetzt) };
+  }
+
   // Zustand, den alle im Spielraum bekommen (Spieler und später Zuschauer)
   function zustandFuer(partie) {
     const spiel = partie.spiel;
@@ -134,6 +141,7 @@ function erstelleServer(optionen = {}) {
       board: spiel.brett,
       turn: spiel.beendet ? null : spiel.amZug,
       moves: spiel.zuege.map(z => ({ color: z.farbe, row: z.row, col: z.col, swap: z.tausch })),
+      clock: uhrenVon(spiel),
     };
   }
 
@@ -153,8 +161,9 @@ function erstelleServer(optionen = {}) {
       id,
       raum: `spiel-${id}`,          // eigener Socket.io-Raum pro Spiel
       privat,                       // private Spiele tauchen nirgends öffentlich auf
-      spiel: new HexSpiel(),
+      spiel: new HexSpiel({ zeitMs: einstellungen.zeitMs, jetzt: Date.now() }),
       spieler: { red: rot, blue: blau },
+      uhrTimer: null,               // feuert, wenn die Zeit des Spielers am Zug abläuft
     };
     partien.set(id, partie);
 
@@ -172,21 +181,46 @@ function erstelleServer(optionen = {}) {
         opponent: gegner.name,
         players: namenVon(partie),
         private: privat,
+        timeMs: einstellungen.zeitMs,
       });
     }
     sendeZustand(partie);
+    planeUhr(partie);
     lobbyAktualisieren();
+  }
+
+  // Schachuhr: Ein Server-Timer feuert genau dann, wenn die Restzeit des
+  // Spielers am Zug abläuft. Nach jedem Zug wird er neu gestellt.
+  function planeUhr(partie) {
+    stoppeTimer(partie.uhrTimer);
+    partie.uhrTimer = null;
+    const spiel = partie.spiel;
+    if (spiel.beendet || !spiel.zeitkonto) return;
+    const rest = spiel.restzeit(spiel.amZug, Date.now());
+    partie.uhrTimer = starteTimer(rest + 5, 'uhr', () => {
+      partie.uhrTimer = null;
+      if (!partien.has(partie.id)) return;
+      if (spiel.pruefeZeit(Date.now())) {
+        sendeZustand(partie);          // zeigt die abgelaufene Uhr (0:00)
+        beendePartie(partie);
+      } else {
+        planeUhr(partie);              // Timer kam einen Hauch zu früh
+      }
+    });
   }
 
   // Spielende an alle im Raum melden und aufräumen
   function beendePartie(partie) {
     const spiel = partie.spiel;
+    stoppeTimer(partie.uhrTimer);
+    partie.uhrTimer = null;
     io.to(partie.raum).emit('gameOver', {
       winner: spiel.gewinner,
       reason: spiel.grund,
       path: spiel.gewinnPfad,
       moveCount: spiel.zuege.length,
       players: namenVon(partie),
+      clock: uhrenVon(spiel),
     });
     for (const sp of Object.values(partie.spieler)) {
       if (sp.partie !== partie) continue;
@@ -376,10 +410,15 @@ function erstelleServer(optionen = {}) {
       const ergebnis = partie.spiel.setzeStein(sp.farbe, daten.row, daten.col, Date.now());
       if (!ergebnis.ok) {
         socket.emit('invalid', { reason: ergebnis.grund });   // nur an den Absender
+        if (partie.spiel.beendet) {                           // Zeit war schon abgelaufen
+          sendeZustand(partie);
+          beendePartie(partie);
+        }
         return;
       }
       sendeZustand(partie);                                   // an beide Spieler
       if (partie.spiel.beendet) beendePartie(partie);
+      else planeUhr(partie);
     });
 
     // Aufgeben: Der Gegner gewinnt sofort

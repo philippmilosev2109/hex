@@ -294,6 +294,57 @@ describe('Private Spiele: Ablauf des Codes', () => {
   });
 });
 
+describe('Schachuhr', () => {
+  test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
+    const { rot, blau, zustandA, startA } = await spielStarten();
+    expect(startA.timeMs).toBe(180000);
+    expect(zustandA.clock.red).toBeLessThanOrEqual(180000);
+    expect(zustandA.clock.blue).toBe(180000);
+    await pause(120);
+    const zustand = await zug(rot, blau, 0, 0);
+    expect(zustand.clock.red).toBeLessThan(180000 - 100);   // Rot hat nachgedacht
+    expect(zustand.clock.blue).toBeGreaterThan(180000 - 20); // Blaus Uhr läuft erst seit eben
+  });
+});
+
+describe('Schachuhr: Zeit läuft ab', () => {
+  beforeEach(async () => {
+    await server.stoppe();
+    server = await require('./helfer').starteTestServer({ zeitMs: 400 });
+  });
+
+  test('wer nicht rechtzeitig zieht, verliert (timeout)', async () => {
+    const { rot, blau } = await spielStarten();
+    const [endeRot, endeBlau] = await Promise.all([rot.warteAuf('gameOver', 3000), blau.warteAuf('gameOver', 3000)]);
+    expect(endeRot.winner).toBe('blue');
+    expect(endeRot.reason).toBe('timeout');
+    expect(endeRot.clock.red).toBe(0);
+    expect(endeBlau.clock.blue).toBe(400);
+    // Vor dem Spielende kam noch ein state mit abgelaufener Uhr
+    const zustaende = rot.alle('state');
+    expect(zustaende[zustaende.length - 1].clock.red).toBe(0);
+    await warteBis(() => server.diagnose().timer === 0);
+  });
+
+  test('die Uhr läuft nur für den Spieler am Zug', async () => {
+    const { rot, blau } = await spielStarten();
+    await zug(rot, blau, 0, 0);              // Rot zieht sofort, dann ist Blau dran
+    const ende = await blau.warteAuf('gameOver', 3000);
+    expect(ende.winner).toBe('red');         // Blau hat die Zeit überschritten
+    expect(ende.clock.red).toBeGreaterThan(300);
+  });
+
+  test('ein Zug nach Ablauf der Zeit wird nicht mehr angenommen', async () => {
+    const { rot, blau } = await spielStarten();
+    await rot.warteAuf('gameOver', 3000);
+    rot.alle('state');                       // alte Zustände verwerfen
+    rot.emit('move', { row: 5, col: 5 });
+    await pause(100);
+    expect(rot.hat('state')).toBe(false);
+    await blau.warteAuf('gameOver');
+  });
+});
+
 describe('Züge', () => {
   test('gültiger Zug geht als state an beide Spieler', async () => {
     const { rot, blau } = await spielStarten();

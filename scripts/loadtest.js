@@ -15,11 +15,14 @@ const { ROT, BLAU, nachbarn, findeGewinnPfad } = require('../game');
 const ANZAHL_BOTS = 40;
 const MAX_DAUER_MS = 120000;
 
+// Kürzere Bedenkzeit für den Lasttest (wird beim Erstellen des Servers gelesen)
+process.env.HEX_ZEIT_MS = process.env.HEX_ZEIT_MS || '10000';
+
 // Verteilung der Verhaltensweisen (wird reihum vergeben)
 const VERHALTEN = [
   'normal', 'normal', 'normal',
   'aufgeber', 'abbrecher', 'chaot', 'zoegerer', 'flooder',
-  'privatErsteller', 'privatGast',
+  'privatErsteller', 'privatGast', 'schlaefer',
 ];
 
 const zufall = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -47,6 +50,7 @@ const statistik = {
   zuege: 0,
   ungueltigeZuegeNormal: 0,
   invalidNachVerhalten: {},  // Verhalten → Anzahl "invalid"-Antworten
+  timeoutVerlierer: {},      // Verhalten → wie oft auf Zeit verloren
   fehler: [],
 };
 const spiele = new Map(); // Spiel-ID → { teilnehmer: Set, beendet: bool, verlassenVon: Set }
@@ -110,7 +114,10 @@ class Bot {
       s.on('connect', () => s.emit('join', { name: this.name }));
       s.on('connect_error', err => { fehler(`${this.name}: connect_error ${err.message}`); this.fertigMachen(); });
       s.on('joined', () => this.losSpielen());
-      s.on('joinError', ({ reason }) => fehler(`${this.name}: joinError ${reason}`));
+      s.on('joinError', ({ reason }) => {
+        // Manipulierte Clients schicken absichtlich kaputte "join"-Daten → Ablehnung ist richtig
+        if (!this.istManipuliert()) fehler(`${this.name}: joinError ${reason}`);
+      });
       s.on('waiting', daten => this.wartet(daten));
       s.on('privateError', ({ reason }) => this.codeFehler(reason));
       s.on('gameStart', daten => this.spielStart(daten));
@@ -209,6 +216,7 @@ class Bot {
     if (this.eigeneZuege >= this.abbruchNachZuegen) {
       if (this.verhalten === 'aufgeber') return this.socket.emit('resign');
       if (this.verhalten === 'abbrecher') return this.verlassen(true);
+      if (this.verhalten === 'schlaefer') return;   // zieht nicht mehr → Zeit läuft ab
     }
     clearTimeout(this.zugTimer);
     this.zugTimer = setTimeout(() => this.ziehe(), zufall(30, 70));
@@ -229,11 +237,16 @@ class Bot {
     this.antwortTimer = setTimeout(() => this.ziehe(), 1500);
   }
 
+  // Chaot und Flooder spielen einen manipulierten Client
+  istManipuliert() {
+    return this.verhalten === 'chaot' || this.verhalten === 'flooder';
+  }
+
   ungueltig() {
     clearTimeout(this.antwortTimer);
     statistik.invalidNachVerhalten[this.verhalten] = (statistik.invalidNachVerhalten[this.verhalten] || 0) + 1;
     // Ehrliche Bots senden nur gültige Züge → hier darf nie "invalid" kommen
-    if (!['chaot', 'flooder'].includes(this.verhalten)) statistik.ungueltigeZuegeNormal++;
+    if (!this.istManipuliert()) statistik.ungueltigeZuegeNormal++;
   }
 
   // Manipulierter Client: kaputte Daten und Ereignisse im falschen Zustand (maßvoll,
@@ -254,6 +267,16 @@ class Bot {
     if (ende.reason === 'connect') {
       if (!this.brett) fehler(`${this.name}: Sieg ohne Brett`);
       else pruefeGewinnPfad(this.brett, ende.path, ende.winner, `${this.name} Spiel ${this.spielId}`);
+    }
+    if (ende.reason === 'timeout') {
+      const verlierer = ende.winner === ROT ? BLAU : ROT;
+      if (verlierer === this.farbe) {
+        statistik.timeoutVerlierer[this.verhalten] = (statistik.timeoutVerlierer[this.verhalten] || 0) + 1;
+        // Ehrliche Bots ziehen immer rechtzeitig – ein Timeout hieße: ein Zug ist hängen geblieben
+        if (!this.istManipuliert() && this.verhalten !== 'schlaefer') fehler(`${this.name}: ehrlicher Bot verliert auf Zeit`);
+      }
+      if (!ende.clock || ende.clock[verlierer] !== 0) fehler(`${this.name}: Timeout, aber Uhr des Verlierers steht nicht auf 0`);
+      if (!ende.clock || ende.clock[ende.winner] <= 0) fehler(`${this.name}: Timeout, aber auch der Sieger hat keine Zeit mehr`);
     }
     this.spielId = null;
     this.farbe = null;
@@ -358,6 +381,7 @@ async function main() {
   console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
+  console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);
 
   if (statistik.fehler.length) {

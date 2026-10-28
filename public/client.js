@@ -188,6 +188,40 @@ $('#knopf-kopieren').addEventListener('click', async () => {
 $('#knopf-abbrechen').addEventListener('click', () => socket.emit('cancel'));
 socket.on('cancelled', () => wechsleZu('lobby'));
 
+// ---------- Schachuhr ----------
+// Der Server ist maßgeblich: Er schickt mit jedem state die Restzeiten.
+// Der Browser zählt nur dazwischen flüssig herunter (alle 100 ms).
+
+let uhrStand = null;      // { red, blue, turn, laeuft, zeitpunkt }
+let uhrIntervall = null;
+
+function formatiereZeit(ms) {
+  const sekunden = Math.floor(ms / 1000);
+  const text = `${Math.floor(sekunden / 60)}:${String(sekunden % 60).padStart(2, '0')}`;
+  // In den letzten 10 Sekunden mit Zehnteln
+  return ms < 10000 ? `${text},${Math.floor((ms % 1000) / 100)}` : text;
+}
+
+function zeigeUhren() {
+  if (!uhrStand) return;
+  const vergangen = performance.now() - uhrStand.zeitpunkt;
+  for (const farbe of ['red', 'blue']) {
+    let rest = uhrStand[farbe];
+    if (uhrStand.laeuft && farbe === uhrStand.turn) rest = Math.max(0, rest - vergangen);
+    const uhr = $(`#uhr-${farbe}`);
+    uhr.textContent = formatiereZeit(rest);
+    uhr.classList.toggle('knapp', rest < 20000);
+  }
+}
+
+function setzeUhren(clock, turn, laeuft) {
+  if (!clock) return;
+  uhrStand = { red: clock.red, blue: clock.blue, turn, laeuft, zeitpunkt: performance.now() };
+  clearInterval(uhrIntervall);
+  uhrIntervall = laeuft ? setInterval(zeigeUhren, 100) : null;
+  zeigeUhren();
+}
+
 // ---------- 3. Spielen ----------
 
 socket.on('gameStart', daten => {
@@ -209,6 +243,7 @@ socket.on('gameStart', daten => {
   brett.zuruecksetzen();
   $('#spielende').hidden = true;
   setzeAufgebenZurueck();
+  setzeUhren({ red: daten.timeMs, blue: daten.timeMs }, 'red', false);
   wechsleZu('spiel');
 });
 
@@ -216,6 +251,7 @@ socket.on('state', zustand => {
   app.zustand = zustand;
   app.zugGesendet = false;
   brett.zeigeZustand(zustand.board);
+  setzeUhren(zustand.clock, zustand.turn, app.laeuft && zustand.turn !== null);
   aktualisiereStatus();
 });
 
@@ -293,6 +329,7 @@ $('#knopf-aufgeben').addEventListener('click', () => {
 
 socket.on('gameOver', ende => {
   app.laeuft = false;
+  setzeUhren(ende.clock, null, false);    // Uhren bleiben auf dem Endstand stehen
   brett.zeigeGewinnPfad(ende.path);
   aktualisiereStatus();
   setzeAufgebenZurueck();
@@ -360,6 +397,7 @@ socket.on('connect', () => {
 
   if (app.laeuft) {
     app.laeuft = false;
+    clearInterval(uhrIntervall);
     aktualisiereStatus();
     setzeAufgebenZurueck();
     zeigeEndeKarte('Verbindung unterbrochen', 'Das Spiel wurde wegen des Verbindungsabbruchs beendet.', '', null);

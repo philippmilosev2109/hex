@@ -35,6 +35,9 @@ const PAARE = [
   // Farbige Schrift auf dunklem Grund
   ['--rot-text', '--flaeche', TEXT, 'Fehlermeldung unter dem Namensfeld, "Rot ↕"'],
   ['--rot-text', '--flaeche-oben', TEXT, 'Fehlermeldung / Regeltext (oberer Kartenteil)'],
+  ['--rot-text', '--flaeche-tief', TEXT, 'Uhr unter 20 Sekunden'],
+  ['--rot-text', '--uhr-knapp', TEXT, 'Uhr unter 20 Sekunden (Puls-Hintergrund)'],
+  ['--text', '--uhr-knapp', TEXT, 'Schrift auf Puls-Hintergrund'],
   ['--blau-text', '--flaeche', TEXT, '"Blau ↔" im Regeltext'],
   ['--blau-text', '--flaeche-oben', TEXT, '"Blau ↔" im Regeltext (oben)'],
   // Weiße Schrift auf farbigen Flächen

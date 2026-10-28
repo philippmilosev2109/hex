@@ -24,6 +24,7 @@
   --rot: #e2001a;               /* DHBW-Rot */
   --rot-dunkel: #b80015;
   --rot-text: #ff7a87;          /* rote Schrift auf dunklem Grund */
+  --uhr-knapp: #45101a;         /* Puls-Hintergrund der Uhr unter 20 s */
   --blau: #2563eb;
   --blau-dunkel: #1c4fc7;
   --blau-text: #92b4ff;         /* blaue Schrift auf dunklem Grund */
@@ -676,7 +677,39 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 .farb-hex-red { background: radial-gradient(circle at 35% 30%, var(--stein-rot-licht), var(--rot) 45%, var(--stein-rot-schatten)); }
 .farb-hex-blue { background: radial-gradient(circle at 35% 30%, var(--stein-blau-licht), var(--blau) 45%, var(--stein-blau-schatten)); }
 
-.spieler-text { min-width: 0; }
+.spieler-text { min-width: 0; flex: 1; }
+
+/* Schachuhr neben dem Namen */
+.uhr {
+  flex: none;
+  min-width: 70px;
+  padding: 4px 10px;
+  background: var(--flaeche-tief);
+  border: 1px solid var(--rahmen);
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.spieler.am-zug .uhr {
+  border-color: var(--text-2);
+  color: var(--text);
+}
+
+/* Weniger als 20 Sekunden: rot, und bei der laufenden Uhr pulsierend */
+.uhr.knapp,
+.spieler.am-zug .uhr.knapp {
+  border-color: var(--rot);
+  color: var(--rot-text);
+}
+.spieler.am-zug .uhr.knapp { animation: uhr-puls 1s ease-in-out infinite; }
+
+@keyframes uhr-puls {
+  50% { background: var(--uhr-knapp); }
+}
 .spieler-name { font-weight: 700; overflow-wrap: anywhere; }
 .du { color: var(--text-2); }
 
