@@ -45,6 +45,11 @@ function zahlAusUmgebung(name, standard) {
 
 // Erstellt einen kompletten Hex-Server (noch ohne zu starten).
 // Die Tests erzeugen damit eigene Server mit kurzen Zeiten.
+//
+// Aufbau dieser Funktion (Abschnitte im Code):
+//   Hilfsfunktionen · Lobby · Rangliste · Spielablauf (Start, Schachuhr, Ende) ·
+//   Zuschauen · Revanche · Chat · Warteschlange · Private Spiele ·
+//   Abmelden/Wiederverbinden · Verbindungen (alle Socket-Ereignisse) · Steuerung
 function erstelleServer(optionen = {}) {
   const einstellungen = {
     maxEventsProSekunde: 20,     // Rate-Limit pro Socket
@@ -75,7 +80,8 @@ function erstelleServer(optionen = {}) {
   const aktiveTimer = new Set();   // alle laufenden setTimeout (zur Kontrolle)
   let naechsteSpielId = 1;
   let fehlerAnzahl = 0;
-  let lobbyTimer = null;
+  let lobbyTimer = null;           // gebündeltes Lobby-Update steht an …
+  let lobbyFaellig = 0;            // … und zwar zu diesem Zeitpunkt
 
   // ---------- Hilfsfunktionen ----------
 
@@ -117,7 +123,7 @@ function erstelleServer(optionen = {}) {
   function pruefeName(name) {
     if (typeof name !== 'string' || name.length > 200) return null;
     const sauber = name
-      .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, '')
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (sauber.length < 1 || sauber.length > NAME_MAX) return null;
@@ -141,6 +147,21 @@ function erstelleServer(optionen = {}) {
         spectators: partie.zuschauer.size,
       }));
     return { online: spielerListe.size, games: partien.size, list: oeffentlich, leaderboard: bestenliste() };
+  }
+
+  // Lobby-Update an alle Angemeldeten (Raum "lobby"). Viele Änderungen kurz
+  // hintereinander werden zu einer Nachricht gebündelt. Nach einem Zug reicht
+  // eine Aktualisierung pro Sekunde, sonst geht es schneller.
+  function lobbyAktualisieren(nachZug = false) {
+    const verzoegerung = nachZug ? einstellungen.lobbyZugVerzoegerungMs : einstellungen.lobbyVerzoegerungMs;
+    const faellig = Date.now() + verzoegerung;
+    if (lobbyTimer && lobbyFaellig <= faellig) return;   // es kommt ohnehin bald ein Update
+    stoppeTimer(lobbyTimer);
+    lobbyFaellig = faellig;
+    lobbyTimer = starteTimer(verzoegerung, 'lobby', () => {
+      lobbyTimer = null;
+      io.to('lobby').emit('lobby', lobbyDaten());
+    });
   }
 
   // ---------- Rangliste (nur im Speicher, seit Serverstart) ----------
@@ -181,22 +202,6 @@ function erstelleServer(optionen = {}) {
     return sortierteRangliste().slice(0, RANGLISTE_TOP);
   }
 
-  // Lobby-Update an alle Angemeldeten (Raum "lobby"). Viele Änderungen kurz
-  // hintereinander werden zu einer Nachricht gebündelt. Nach einem Zug reicht
-  // eine Aktualisierung pro Sekunde, sonst geht es schneller.
-  let lobbyFaellig = 0;
-  function lobbyAktualisieren(nachZug = false) {
-    const verzoegerung = nachZug ? einstellungen.lobbyZugVerzoegerungMs : einstellungen.lobbyVerzoegerungMs;
-    const faellig = Date.now() + verzoegerung;
-    if (lobbyTimer && lobbyFaellig <= faellig) return;   // es kommt ohnehin bald ein Update
-    stoppeTimer(lobbyTimer);
-    lobbyFaellig = faellig;
-    lobbyTimer = starteTimer(verzoegerung, 'lobby', () => {
-      lobbyTimer = null;
-      io.to('lobby').emit('lobby', lobbyDaten());
-    });
-  }
-
   // ---------- Spielablauf ----------
 
   // Restzeit beider Uhren in Millisekunden (jetzt gerade)
@@ -205,7 +210,7 @@ function erstelleServer(optionen = {}) {
     return { red: spiel.restzeit('red', jetzt), blue: spiel.restzeit('blue', jetzt) };
   }
 
-  // Zustand, den alle im Spielraum bekommen (Spieler und später Zuschauer)
+  // Zustand, den alle im Spielraum bekommen (Spieler und Zuschauer)
   function zustandFuer(partie) {
     const spiel = partie.spiel;
     return {
@@ -423,7 +428,7 @@ function erstelleServer(optionen = {}) {
   function pruefeChatText(text) {
     if (typeof text !== 'string' || text.length > CHAT_MAX * 4) return null;
     const sauber = text
-      .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, ' ')
+      .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (sauber.length < 1 || sauber.length > CHAT_MAX) return null;
@@ -451,7 +456,9 @@ function erstelleServer(optionen = {}) {
     return null;
   }
 
-  // Warteschlange: Sobald zwei Spieler warten, startet ein Spiel.
+  // ---------- Warteschlange (Matching) ----------
+
+  // FIFO-Warteschlange: Sobald zwei Spieler warten, startet ein Spiel.
   function stelleInWarteschlange(sp) {
     sp.zustand = WARTEND;
     warteschlange.push(sp);
