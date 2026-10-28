@@ -284,9 +284,13 @@ socket.on('gameStart', daten => {
   $('#spielende').hidden = true;
   $('#knopf-ergebnis').hidden = true;
   $('#zugliste').replaceChildren();
+  $('#chatliste').replaceChildren();
+  ungelesen = 0;
+  zeigeUngelesen();
   setzeAufgebenZurueck();
   setzeUhren({ red: daten.timeMs, blue: daten.timeMs }, 'red', false);
   wechsleZu('spiel');
+  aktualisiereChat();
 });
 
 socket.on('state', zustand => {
@@ -521,6 +525,7 @@ function zeigeRevanche(zustand, text = '') {
   status.textContent = text;
   status.hidden = !text;
   status.classList.toggle('angebot', zustand === 'angebot');
+  aktualisiereChat();   // ist der Gegner weg, schließt auch der Chat
 }
 
 $('#knopf-revanche').addEventListener('click', () => {
@@ -541,6 +546,99 @@ socket.on('rematchOffered', ({ from }) => {
 
 socket.on('rematchCancelled', ({ reason }) => {
   zeigeRevanche('unmoeglich', reason);
+});
+
+// ---------- Chat und Reaktionen ----------
+
+let ungelesen = 0;   // Chat-Nachrichten, die kamen, während der Zugverlauf offen war
+
+// Reiter umschalten (Zugverlauf | Chat) – auch mit den Pfeiltasten
+function zeigeReiter(name) {
+  for (const reiter of ['zuege', 'chat']) {
+    const aktiv = reiter === name;
+    const knopf = $(`#reiter-${reiter}`);
+    knopf.setAttribute('aria-selected', String(aktiv));
+    knopf.tabIndex = aktiv ? 0 : -1;
+    $(`#tafel-${reiter}`).hidden = !aktiv;
+  }
+  if (name === 'chat') {
+    ungelesen = 0;
+    zeigeUngelesen();
+    $('#chatliste').scrollTop = $('#chatliste').scrollHeight;
+  }
+}
+for (const reiter of ['zuege', 'chat']) {
+  $(`#reiter-${reiter}`).addEventListener('click', () => zeigeReiter(reiter));
+}
+$('.reiter').addEventListener('keydown', event => {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+  const neu = $('#reiter-zuege').getAttribute('aria-selected') === 'true' ? 'chat' : 'zuege';
+  zeigeReiter(neu);
+  $(`#reiter-${neu}`).focus();
+});
+
+function zeigeUngelesen() {
+  const zahl = $('#chat-ungelesen');
+  zahl.textContent = ungelesen > 9 ? '9+' : String(ungelesen);
+  zahl.hidden = ungelesen === 0;
+}
+
+// Chat ist offen im Spiel und danach, solange der Gegner noch am Tisch ist
+function aktualisiereChat() {
+  const offen = app.laeuft || (app.ansicht === 'spiel' && app.revanche !== 'unmoeglich');
+  $('#chat-eingabe').disabled = !offen;
+  $('#chat-eingabe').placeholder = offen ? 'Nachricht schreiben …' : 'Chat ist geschlossen';
+  for (const knopf of document.querySelectorAll('#chat-bedienung button')) knopf.disabled = !offen;
+}
+
+// Neue Nachricht: Name in Spielerfarbe, Text NUR per textContent (kein HTML!)
+socket.on('chat', nachricht => {
+  const eintrag = document.createElement('li');
+  const name = document.createElement('strong');
+  name.className = `chat-name ${nachricht.color}`;
+  name.textContent = nachricht.from;
+  const text = document.createElement('span');
+  text.textContent = nachricht.text;
+  eintrag.append(name, text);
+  const liste = $('#chatliste');
+  liste.appendChild(eintrag);
+  while (liste.children.length > 100) liste.firstElementChild.remove();
+  liste.scrollTop = liste.scrollHeight;
+  if ($('#tafel-chat').hidden) {
+    ungelesen++;
+    zeigeUngelesen();
+  }
+});
+
+socket.on('chatError', ({ reason }) => meldung(reason, 'fehler'));
+
+$('#chat-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const eingabe = $('#chat-eingabe');
+  const text = eingabe.value.replace(/\s+/g, ' ').trim();
+  if (!text) return;
+  socket.emit('chat', { text: text.slice(0, 200) });
+  eingabe.value = '';
+});
+
+for (const knopf of document.querySelectorAll('.reaktion-knopf')) {
+  knopf.addEventListener('click', () => socket.emit('reaction', { emoji: knopf.dataset.emoji }));
+}
+
+// Reaktion steigt über dem Brett auf und verschwindet nach gut 2 Sekunden
+socket.on('reaction', ({ from, color, emoji }) => {
+  const blase = document.createElement('div');
+  blase.className = `reaktion-blase ${color}`;
+  blase.style.left = `${10 + Math.random() * 70}%`;
+  const zeichen = document.createElement('span');
+  zeichen.className = 'emoji';
+  zeichen.textContent = emoji;
+  const wer = document.createElement('span');
+  wer.className = 'wer';
+  wer.textContent = from;
+  blase.append(zeichen, wer);
+  $('#reaktion-buehne').appendChild(blase);
+  setTimeout(() => blase.remove(), 2300);
 });
 
 // 5. Erneut spielen: neuer Gegner (Warteschlange), Lobby oder abmelden

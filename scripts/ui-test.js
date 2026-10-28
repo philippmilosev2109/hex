@@ -32,9 +32,9 @@ async function neueSeite(browser, url, groesse, wer) {
   return seite;
 }
 
-async function foto(seite, name) {
+async function foto(seite, name, { mitAnimation = false } = {}) {
   // animations: 'disabled' spult Einblend-Animationen bis zum Ende vor
-  await seite.screenshot({ path: path.join(ORDNER, `${name}.png`), animations: 'disabled' });
+  await seite.screenshot({ path: path.join(ORDNER, `${name}.png`), animations: mitAnimation ? 'allow' : 'disabled' });
 }
 
 // Kein horizontales Scrollen erlaubt
@@ -113,6 +113,22 @@ async function durchlauf(browser, url, groesse) {
   await rot.hover('polygon.feld[data-r="6"][data-c="3"]');
   await foto(rot, `${groesse.name}-3-spiel`);
   await pruefeBreite(rot, 'Spiel');
+
+  // Chat: Nachricht mit HTML darf nur als Text ankommen; ungelesen-Zähler beim Gegner
+  await rot.click('#reiter-chat');
+  await rot.fill('#chat-eingabe', 'Viel Glück! <img src=x onerror=alert(1)>');
+  await rot.press('#chat-eingabe', 'Enter');
+  await blau.waitForSelector('#chat-ungelesen:not([hidden])');
+  await blau.click('#reiter-chat');
+  await blau.waitForFunction(() => document.querySelector('#chatliste').textContent.includes('<img src=x'));
+  if (await blau.locator('#chatliste img').count() > 0) throw new Error('Chat hat HTML ausgeführt!');
+  // Reaktion steigt beim Gegner über dem Brett auf
+  await blau.click('.reaktion-knopf[data-emoji="🔥"]');
+  await rot.waitForSelector('.reaktion-blase');
+  await rot.waitForTimeout(400);
+  await foto(rot, `${groesse.name}-3d-chat-reaktion`, { mitAnimation: true });
+  await rot.click('#reiter-zuege');
+  await blau.click('#reiter-zuege');
 
   // Ungültiger Klick: Blau ist nicht am Zug → nichts passiert
   await blau.click('polygon.feld[data-r="8"][data-c="8"]', { force: true });

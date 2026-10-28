@@ -134,6 +134,8 @@
       <div class="spiel-layout">
         <div class="brett-bereich">
           <div id="brett" class="brett"></div>
+          <!-- Hier steigen die Schnell-Reaktionen auf -->
+          <div id="reaktion-buehne" class="reaktion-buehne" aria-hidden="true"></div>
 
           <!-- 4. Spielende (liegt über dem Brett) -->
           <div id="spielende" class="spielende" role="dialog" aria-labelledby="ende-titel" aria-describedby="ende-text" hidden>
@@ -208,10 +210,38 @@
           </p>
           <p id="zugzaehler" class="zugzaehler"></p>
 
-          <section class="verlauf" aria-labelledby="verlauf-titel">
-            <h2 id="verlauf-titel" class="abschnitt-titel">Zugverlauf</h2>
-            <ol id="zugliste" class="zugliste" tabindex="0" aria-labelledby="verlauf-titel"></ol>
-          </section>
+          <!-- Reiter: Zugverlauf und Chat teilen sich den Platz -->
+          <div class="reiter" role="tablist" aria-label="Zugverlauf und Chat">
+            <button id="reiter-zuege" type="button" role="tab" class="reiter-knopf"
+                    aria-selected="true" aria-controls="tafel-zuege">Zugverlauf</button>
+            <button id="reiter-chat" type="button" role="tab" class="reiter-knopf"
+                    aria-selected="false" aria-controls="tafel-chat" tabindex="-1">
+              Chat <span id="chat-ungelesen" class="ungelesen" hidden></span>
+            </button>
+          </div>
+
+          <div id="tafel-zuege" class="tafel" role="tabpanel" aria-labelledby="reiter-zuege">
+            <ol id="zugliste" class="zugliste" tabindex="0" aria-label="Alle Züge dieser Partie"></ol>
+          </div>
+
+          <div id="tafel-chat" class="tafel" role="tabpanel" aria-labelledby="reiter-chat" hidden>
+            <ol id="chatliste" class="chatliste" tabindex="0" aria-label="Chat-Nachrichten" aria-live="polite"></ol>
+            <div id="chat-bedienung">
+              <div class="reaktionen" role="group" aria-label="Schnell-Reaktionen">
+                <button type="button" class="reaktion-knopf" data-emoji="👍" aria-label="Reaktion: Daumen hoch">👍</button>
+                <button type="button" class="reaktion-knopf" data-emoji="😮" aria-label="Reaktion: Staunen">😮</button>
+                <button type="button" class="reaktion-knopf" data-emoji="😅" aria-label="Reaktion: Puh">😅</button>
+                <button type="button" class="reaktion-knopf" data-emoji="🔥" aria-label="Reaktion: Feuer">🔥</button>
+                <button type="button" class="reaktion-knopf" data-emoji="👏" aria-label="Reaktion: Applaus">👏</button>
+                <button type="button" class="reaktion-knopf" data-emoji="🤝" aria-label="Reaktion: Gutes Spiel">🤝</button>
+              </div>
+              <form id="chat-form" class="chat-form" novalidate>
+                <label for="chat-eingabe" class="nur-screenreader">Chat-Nachricht</label>
+                <input id="chat-eingabe" type="text" maxlength="200" autocomplete="off" placeholder="Nachricht schreiben …">
+                <button type="submit" class="knopf knopf-sekundaer knopf-klein">Senden</button>
+              </form>
+            </div>
+          </div>
 
           <button id="knopf-aufgeben" type="button" class="knopf knopf-sekundaer">Aufgeben</button>
         </aside>

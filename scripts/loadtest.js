@@ -22,8 +22,9 @@ process.env.HEX_ZEIT_MS = process.env.HEX_ZEIT_MS || '10000';
 const VERHALTEN = [
   'normal', 'normal', 'normal',
   'aufgeber', 'abbrecher', 'chaot', 'zoegerer', 'flooder',
-  'privatErsteller', 'privatGast', 'schlaefer',
+  'privatErsteller', 'privatGast', 'schlaefer', 'spammer',
 ];
+const REAKTIONEN = ['👍', '😮', '😅', '🔥', '👏', '🤝'];
 
 const zufall = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -48,6 +49,9 @@ const statistik = {
   codeFehler: 0,         // erwartete Fehler bei falschen Codes
   tausche: 0,            // Swap-Regel angewendet
   revanchen: 0,          // angenommene Revanche-Angebote
+  chatEmpfangen: 0,
+  chatAbgelehnt: 0,      // vom Server gebremste/abgelehnte Nachrichten
+  reaktionen: 0,
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -124,6 +128,9 @@ class Bot {
       s.on('privateError', ({ reason }) => this.codeFehler(reason));
       s.on('rematchOffered', () => this.revancheAngebot());
       s.on('rematchCancelled', () => this.weiterNachSpiel());
+      s.on('chat', nachricht => this.chatEmpfangen(nachricht));
+      s.on('chatError', () => { statistik.chatAbgelehnt++; });
+      s.on('reaction', () => { statistik.reaktionen++; });
       s.on('gameStart', daten => this.spielStart(daten));
       s.on('state', zustand => this.neuerZustand(zustand));
       s.on('invalid', () => this.ungueltig());
@@ -193,8 +200,32 @@ class Bot {
     }, daten.mode === 'private' ? 6000 : 3000);
   }
 
+  // Jede empfangene Nachricht muss sauber aufgebaut sein
+  chatEmpfangen(nachricht) {
+    statistik.chatEmpfangen++;
+    const ok = nachricht && typeof nachricht.text === 'string' && nachricht.text.length >= 1 &&
+               nachricht.text.length <= 200 && typeof nachricht.from === 'string' &&
+               (nachricht.color === ROT || nachricht.color === BLAU);
+    if (!ok) fehler(`${this.name}: kaputte Chat-Nachricht empfangen`);
+  }
+
+  // Spammer: schickt viel zu schnell Nachrichten und Reaktionen (Server muss bremsen)
+  spammen() {
+    clearInterval(this.spamTimer);
+    this.spamTimer = setInterval(() => {
+      if (this.fertig || this.spielId === null) return clearInterval(this.spamTimer);
+      this.socket.emit('chat', { text: `Spam ${Math.random()}`.repeat(zufall(1, 12)) });
+      this.socket.emit('reaction', { emoji: REAKTIONEN[zufall(0, REAKTIONEN.length - 1)] });
+    }, 150);
+  }
+
   spielStart(daten) {
     clearTimeout(this.warteTimer);
+    if (this.verhalten === 'spammer') this.spammen();
+    // Normale Spieler grüßen manchmal
+    else if (!this.istManipuliert() && Math.random() < 0.3) {
+      setTimeout(() => !this.fertig && this.socket.emit('chat', { text: 'Viel Glück! 🍀' }), zufall(50, 500));
+    }
     this.farbe = daten.color;
     this.spielId = daten.gameId;
     this.brett = null;
@@ -250,9 +281,9 @@ class Bot {
     this.antwortTimer = setTimeout(() => this.ziehe(), 1500);
   }
 
-  // Chaot und Flooder spielen einen manipulierten Client
+  // Chaot, Flooder und Spammer spielen einen manipulierten Client
   istManipuliert() {
-    return this.verhalten === 'chaot' || this.verhalten === 'flooder';
+    return ['chaot', 'flooder', 'spammer'].includes(this.verhalten);
   }
 
   ungueltig() {
@@ -331,6 +362,7 @@ class Bot {
     if (this.fertig) return;
     this.fertig = true;
     for (const t of [this.zugTimer, this.warteTimer, this.antwortTimer, this.revancheTimer]) clearTimeout(t);
+    clearInterval(this.spamTimer);
     if (this.socket.connected) this.socket.disconnect();
     this.beenden();
   }
@@ -376,6 +408,7 @@ async function main() {
   }
 
   if (statistik.privateSpiele === 0) fehler('Es wurde kein einziges privates Spiel gespielt');
+  if (statistik.chatAbgelehnt === 0) fehler('Das Chat-Rate-Limit hat nie gegriffen');
 
   // Server muss aufgeräumt haben …
   const leer = { spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, raeume: 0, timer: 0 };
@@ -411,6 +444,7 @@ async function main() {
   console.log(`Spiele gestartet: ${statistik.spieleGestartet} (davon privat: ${statistik.privateSpiele}), Züge: ${statistik.zuege}, Dauer: ${dauer} s`);
   console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}, Revanchen: ${statistik.revanchen}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
+  console.log(`Chat: ${statistik.chatEmpfangen} Nachrichten zugestellt, ${statistik.chatAbgelehnt} abgelehnt, ${statistik.reaktionen} Reaktionen`);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);

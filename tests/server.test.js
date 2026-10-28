@@ -415,6 +415,71 @@ describe('Revanche', () => {
   });
 });
 
+describe('Chat und Reaktionen', () => {
+  test('Nachricht geht an beide Spieler, gesäubert und mit Farbe', async () => {
+    const { rot, blau, a } = await spielStarten('Anna', 'Ben');
+    rot.emit('chat', { text: '  viel\nGlück \u0007 <b>!</b>  ' });
+    const [beiRot, beiBlau] = await Promise.all([rot.warteAuf('chat'), blau.warteAuf('chat')]);
+    expect(beiRot).toEqual(beiBlau);
+    expect(beiRot.text).toBe('viel Glück <b>!</b>');    // HTML bleibt reiner Text
+    expect(beiRot.color).toBe('red');
+    expect(beiRot.from).toBe(rot === a ? 'Anna' : 'Ben');
+  });
+
+  test('zu lange, leere und kaputte Nachrichten werden abgelehnt', async () => {
+    const { rot, blau } = await spielStarten();
+    for (const daten of [{ text: 'x'.repeat(201) }, { text: '   ' }, { text: 42 }, null, 'hallo']) {
+      rot.emit('chat', daten);
+      await rot.warteAuf('chatError');
+    }
+    rot.emit('chat', { text: 'x'.repeat(200) });         // genau 200 ist erlaubt
+    expect((await blau.warteAuf('chat')).text).toHaveLength(200);
+  });
+
+  test('Rate-Limit: höchstens eine Nachricht pro Sekunde', async () => {
+    const { rot, blau } = await spielStarten();
+    rot.emit('chat', { text: 'eins' });
+    rot.emit('chat', { text: 'zwei' });
+    expect((await rot.warteAuf('chatError')).reason).toMatch(/pro Sekunde/);
+    await blau.warteAuf('chat');
+    await pause(100);
+    expect(blau.alle('chat')).toHaveLength(0);
+    await pause(1000);
+    rot.emit('chat', { text: 'drei' });
+    expect((await blau.warteAuf('chat')).text).toBe('drei');
+  });
+
+  test('Reaktionen: nur erlaubte Emojis, mit kleinem Rate-Limit', async () => {
+    const { rot, blau } = await spielStarten();
+    rot.emit('reaction', { emoji: '🔥' });
+    expect(await blau.warteAuf('reaction')).toMatchObject({ emoji: '🔥', color: 'red' });
+    await pause(700);
+    for (const emoji of ['💩', '<script>', '', null, 5]) rot.emit('reaction', { emoji });
+    rot.emit('reaction', 'kaputt');
+    await pause(150);
+    expect(blau.hat('reaction')).toBe(false);
+  });
+
+  test('ohne Spiel kein Chat, nach dem Spiel nur zwischen den beiden Gegnern', async () => {
+    const solo = await anmelden('Solo');
+    solo.emit('chat', { text: 'hallo?' });
+    await pause(100);
+    expect(solo.hat('chat')).toBe(false);
+    expect(solo.hat('chatError')).toBe(false);
+
+    const { rot, blau } = await spielStarten();
+    rot.emit('resign');
+    await Promise.all([rot.warteAuf('gameOver'), blau.warteAuf('gameOver')]);
+    blau.emit('chat', { text: 'gg' });
+    expect((await rot.warteAuf('chat')).text).toBe('gg');
+    rot.emit('leaveGame');
+    await pause(1100);
+    blau.emit('chat', { text: 'noch da?' });
+    await pause(100);
+    expect(rot.hat('chat')).toBe(false);
+  });
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();

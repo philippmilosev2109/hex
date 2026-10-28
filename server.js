@@ -19,6 +19,13 @@ const NAME_MAX = 20;
 const CODE_ZEICHEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LAENGE = 4;
 
+// Chat: maximale Länge, Mindestabstand zwischen Nachrichten, erlaubte Schnell-Reaktionen
+const CHAT_MAX = 200;
+const CHAT_ABSTAND_MS = 1000;
+const REAKTION_ABSTAND_MS = 600;
+const REAKTIONEN = ['👍', '😮', '😅', '🔥', '👏', '🤝'];
+const CHAT_VERLAUF_MAX = 50;     // so viele Nachrichten merkt sich ein Spiel
+
 // Die möglichen Zustände eines angemeldeten Spielers.
 // Jeder Spieler ist immer in genau einem davon.
 const IDLE = 'idle';             // angemeldet, macht gerade nichts (Lobby)
@@ -168,6 +175,7 @@ function erstelleServer(optionen = {}) {
       spiel: new HexSpiel({ zeitMs: einstellungen.zeitMs, jetzt: Date.now() }),
       spieler: { red: rot, blue: blau },
       uhrTimer: null,               // feuert, wenn die Zeit des Spielers am Zug abläuft
+      chat: [],                     // letzte Chat-Nachrichten (für später Hinzukommende)
     };
     partien.set(id, partie);
 
@@ -282,6 +290,40 @@ function erstelleServer(optionen = {}) {
     nach.revanche = true;
     gegner.socket.emit('rematchOffered', { from: sp.name });
     sp.socket.emit('rematchWaiting', { opponent: gegner.name });
+  }
+
+  // ---------- Chat und Reaktionen ----------
+
+  // Chattext säubern: Steuer- und Sonderzeichen weg, Leerraum zusammenfassen, 1–200 Zeichen
+  function pruefeChatText(text) {
+    if (typeof text !== 'string' || text.length > CHAT_MAX * 4) return null;
+    const sauber = text
+      .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (sauber.length < 1 || sauber.length > CHAT_MAX) return null;
+    return sauber;
+  }
+
+  // Wohin geht eine Chat-Nachricht? Im Spiel an den ganzen Raum (auch an Zuschauer),
+  // nach dem Spiel nur an die beiden Gegner. Kein passendes Ziel → null.
+  function chatZiel(sp) {
+    if (sp.zustand === IM_SPIEL) {
+      const partie = sp.partie;
+      return { farbe: sp.farbe, partie, senden: (ereignis, daten) => io.to(partie.raum).emit(ereignis, daten) };
+    }
+    const nach = sp.nachSpiel;
+    if (sp.zustand === IDLE && nach && nach.gegner.nachSpiel && nach.gegner.nachSpiel.gegner === sp) {
+      return {
+        farbe: nach.farbe,
+        partie: null,
+        senden: (ereignis, daten) => {
+          if (sp.socket) sp.socket.emit(ereignis, daten);
+          if (nach.gegner.socket) nach.gegner.socket.emit(ereignis, daten);
+        },
+      };
+    }
+    return null;
   }
 
   // Warteschlange: Sobald zwei Spieler warten, startet ein Spiel.
@@ -399,6 +441,8 @@ function erstelleServer(optionen = {}) {
         farbe: null,
         privatCode: null,     // Code des eigenen privaten Raums (nur beim Warten)
         nachSpiel: null,      // nach Spielende: { gegner, farbe, revanche, privat }
+        letzterChat: 0,       // Zeitpunkt der letzten Chat-Nachricht (Rate-Limit)
+        letzteReaktion: 0,
       };
       spielerListe.set(sp.id, sp);
       socket.data.spieler = sp;
@@ -501,6 +545,44 @@ function erstelleServer(optionen = {}) {
       if (partie.spiel.beendet) beendePartie(partie);
       else planeUhr(partie);
     }
+
+    // Chat-Nachricht: { text } – höchstens eine pro Sekunde
+    an('chat', daten => {
+      const sp = spieler();
+      if (!sp) return;
+      const ziel = chatZiel(sp);
+      if (!ziel) return;                              // nicht im Spiel → ignorieren
+      const text = pruefeChatText(istObjekt(daten) ? daten.text : undefined);
+      if (!text) {
+        socket.emit('chatError', { reason: `Nachrichten haben 1 bis ${CHAT_MAX} Zeichen.` });
+        return;
+      }
+      const jetzt = Date.now();
+      if (jetzt - sp.letzterChat < CHAT_ABSTAND_MS) {
+        socket.emit('chatError', { reason: 'Nicht so schnell – höchstens eine Nachricht pro Sekunde.' });
+        return;
+      }
+      sp.letzterChat = jetzt;
+      const nachricht = { from: sp.name, color: ziel.farbe, text, time: jetzt };
+      if (ziel.partie) {
+        ziel.partie.chat.push(nachricht);
+        if (ziel.partie.chat.length > CHAT_VERLAUF_MAX) ziel.partie.chat.shift();
+      }
+      ziel.senden('chat', nachricht);
+    });
+
+    // Schnell-Reaktion: { emoji } – nur Emojis aus der festen Liste
+    an('reaction', daten => {
+      const sp = spieler();
+      if (!sp) return;
+      const ziel = chatZiel(sp);
+      const emoji = istObjekt(daten) ? daten.emoji : undefined;
+      if (!ziel || !REAKTIONEN.includes(emoji)) return;
+      const jetzt = Date.now();
+      if (jetzt - sp.letzteReaktion < REAKTION_ABSTAND_MS) return;
+      sp.letzteReaktion = jetzt;
+      ziel.senden('reaction', { from: sp.name, color: ziel.farbe, emoji });
+    });
 
     // Aufgeben: Der Gegner gewinnt sofort
     an('resign', () => {
