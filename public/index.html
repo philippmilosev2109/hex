@@ -105,6 +105,14 @@
 
           <button id="knopf-lobby-abmelden" type="button" class="knopf-text">Abmelden</button>
         </div>
+
+        <aside class="lobby-seite" aria-label="Was gerade passiert">
+          <section class="karte karte-kompakt" aria-labelledby="spiele-titel">
+            <h2 id="spiele-titel" class="abschnitt-titel">Laufende Spiele</h2>
+            <ul id="spiele-liste" class="spiele-liste"></ul>
+            <p id="spiele-leer" class="leer-hinweis">Gerade läuft kein öffentliches Spiel.</p>
+          </section>
+        </aside>
       </div>
     </section>
 
@@ -153,6 +161,7 @@
               <div class="knopf-reihe">
                 <button id="knopf-revanche" type="button" class="knopf knopf-primaer">Revanche</button>
                 <button id="knopf-nochmal" type="button" class="knopf knopf-sekundaer">Neuer Gegner</button>
+                <button id="knopf-zuschauer-lobby" type="button" class="knopf knopf-primaer" hidden>Zurück zur Lobby</button>
                 <div class="text-knoepfe">
                   <button id="knopf-zur-lobby" type="button" class="knopf-text">Zur Lobby</button>
                   <button id="knopf-brett-ansehen" type="button" class="knopf-text">Brett ansehen</button>
@@ -169,8 +178,17 @@
         <aside class="panel" aria-label="Spielinformationen">
           <div class="panel-kopf">
             <h1 id="spiel-titel" class="panel-titel" tabindex="-1" data-fokus>Spiel #<span id="spiel-id"></span></h1>
-            <span id="privat-abzeichen" class="abzeichen" hidden>Privat</span>
+            <span class="abzeichen-reihe">
+              <span id="privat-abzeichen" class="abzeichen" hidden>Privat</span>
+              <span id="zuschauer-anzeige" class="abzeichen" hidden>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span id="zuschauer-zahl"></span>
+              </span>
+            </span>
           </div>
+          <p id="zuschauer-hinweis" class="zuschauer-hinweis" hidden>
+            Du schaust zu – Steine setzen und chatten können nur die beiden Spieler.
+          </p>
           <ul class="spielerliste">
             <li id="spieler-red" class="spieler">
               <span class="farb-hex farb-hex-red" aria-hidden="true">↕</span>
@@ -244,6 +262,7 @@
           </div>
 
           <button id="knopf-aufgeben" type="button" class="knopf knopf-sekundaer">Aufgeben</button>
+          <button id="knopf-zuschauen-beenden" type="button" class="knopf knopf-sekundaer" hidden>Zuschauen beenden</button>
         </aside>
       </div>
     </section>

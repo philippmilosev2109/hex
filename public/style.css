@@ -357,12 +357,69 @@ input[aria-invalid="true"] { border-color: var(--rot-text); }
    ========================================================== */
 .lobby {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
   gap: 24px;
-  max-width: 560px;
+  max-width: 980px;
   margin: 0 auto;
 }
 
 .lobby-haupt { display: grid; }
+
+.lobby-seite {
+  display: grid;
+  gap: 16px;
+}
+
+.karte-kompakt { padding: 20px; }
+
+/* Laufende Spiele (zum Zuschauen) */
+.spiele-liste {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spiel-eintrag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--flaeche-hoch);
+  border: 1px solid var(--rahmen);
+  border-radius: 12px;
+}
+
+.spiel-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.spiel-namen {
+  overflow: hidden;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.spiel-namen .name-red { color: var(--rot-text); }
+.spiel-namen .name-blue { color: var(--blau-text); }
+
+.spiel-info {
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.spiel-eintrag .knopf { flex: none; }
+
+.leer-hinweis {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.9rem;
+}
 .lobby-haupt h1 { overflow-wrap: anywhere; }
 
 .lobby-live {
@@ -715,7 +772,17 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   gap: 8px;
 }
 
+.abzeichen-reihe {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .abzeichen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 2px 10px;
   background: var(--flaeche-hoch);
   border: 1px solid var(--rahmen);
@@ -731,6 +798,16 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 700;
   letter-spacing: 0.25em;
   text-transform: uppercase;
+}
+
+.zuschauer-hinweis {
+  margin: -6px 0 0;
+  padding: 8px 12px;
+  background: var(--flaeche-tief);
+  border: 1px dashed var(--rahmen-stark);
+  border-radius: 10px;
+  color: var(--text-2);
+  font-size: 0.88rem;
 }
 
 .spielerliste {
@@ -1185,6 +1262,14 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 /* ==========================================================
    9. Kleinere Bildschirme
    ========================================================== */
+/* Lobby: Liste der laufenden Spiele rutscht unter die Optionen */
+@media (max-width: 860px) {
+  .lobby {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 560px;
+  }
+}
+
 /* Tablet und Handy: Panel rutscht unter das Brett */
 @media (max-width: 900px) {
   .spiel-layout {

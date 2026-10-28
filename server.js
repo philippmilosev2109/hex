@@ -31,6 +31,9 @@ const CHAT_VERLAUF_MAX = 50;     // so viele Nachrichten merkt sich ein Spiel
 const IDLE = 'idle';             // angemeldet, macht gerade nichts (Lobby)
 const WARTEND = 'wartend';       // in der Warteschlange oder im eigenen privaten Raum
 const IM_SPIEL = 'imSpiel';      // spielt gerade
+const ZUSCHAUEND = 'zuschauend'; // schaut einem öffentlichen Spiel zu
+
+const LOBBY_LISTE_MAX = 20;      // so viele laufende Spiele zeigt die Lobby höchstens
 
 // Zeiten lassen sich per Umgebungsvariable ändern (z. B. kürzer im Lasttest)
 function zahlAusUmgebung(name, standard) {
@@ -43,7 +46,8 @@ function zahlAusUmgebung(name, standard) {
 function erstelleServer(optionen = {}) {
   const einstellungen = {
     maxEventsProSekunde: 20,     // Rate-Limit pro Socket
-    lobbyVerzoegerungMs: 100,    // Lobby-Updates werden kurz gesammelt
+    lobbyVerzoegerungMs: 100,    // Lobby-Updates werden kurz gesammelt …
+    lobbyZugVerzoegerungMs: 1000, // … nach einem Zug (Zugzahl in der Liste) etwas länger
     privatAblaufMs: zahlAusUmgebung('HEX_PRIVAT_MS', 10 * 60 * 1000), // Code gilt 10 Minuten
     zeitMs: zahlAusUmgebung('HEX_ZEIT_MS', 3 * 60 * 1000),            // Bedenkzeit je Spieler
     ...optionen,
@@ -115,19 +119,34 @@ function erstelleServer(optionen = {}) {
 
   // ---------- Lobby ----------
 
-  // Was alle angemeldeten Spieler in der Lobby live sehen
+  // Was alle angemeldeten Spieler in der Lobby live sehen:
+  // Zahlen und die laufenden öffentlichen Spiele (private bleiben unsichtbar)
   function lobbyDaten() {
-    return {
-      online: spielerListe.size,
-      games: partien.size,
-    };
+    const oeffentlich = [...partien.values()]
+      .filter(partie => !partie.privat)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, LOBBY_LISTE_MAX)
+      .map(partie => ({
+        id: partie.id,
+        red: partie.spieler.red.name,
+        blue: partie.spieler.blue.name,
+        moves: partie.spiel.zuege.length,
+        spectators: partie.zuschauer.size,
+      }));
+    return { online: spielerListe.size, games: partien.size, list: oeffentlich };
   }
 
   // Lobby-Update an alle Angemeldeten (Raum "lobby"). Viele Änderungen kurz
-  // hintereinander werden zu einer Nachricht gebündelt.
-  function lobbyAktualisieren() {
-    if (lobbyTimer) return;
-    lobbyTimer = starteTimer(einstellungen.lobbyVerzoegerungMs, 'lobby', () => {
+  // hintereinander werden zu einer Nachricht gebündelt. Nach einem Zug reicht
+  // eine Aktualisierung pro Sekunde, sonst geht es schneller.
+  let lobbyFaellig = 0;
+  function lobbyAktualisieren(nachZug = false) {
+    const verzoegerung = nachZug ? einstellungen.lobbyZugVerzoegerungMs : einstellungen.lobbyVerzoegerungMs;
+    const faellig = Date.now() + verzoegerung;
+    if (lobbyTimer && lobbyFaellig <= faellig) return;   // es kommt ohnehin bald ein Update
+    stoppeTimer(lobbyTimer);
+    lobbyFaellig = faellig;
+    lobbyTimer = starteTimer(verzoegerung, 'lobby', () => {
       lobbyTimer = null;
       io.to('lobby').emit('lobby', lobbyDaten());
     });
@@ -176,6 +195,7 @@ function erstelleServer(optionen = {}) {
       spieler: { red: rot, blue: blau },
       uhrTimer: null,               // feuert, wenn die Zeit des Spielers am Zug abläuft
       chat: [],                     // letzte Chat-Nachrichten (für später Hinzukommende)
+      zuschauer: new Set(),         // Spieler, die zuschauen
     };
     partien.set(id, partie);
 
@@ -241,6 +261,13 @@ function erstelleServer(optionen = {}) {
       sp.farbe = null;
       if (sp.socket) sp.socket.leave(partie.raum);
     }
+    // Zuschauer haben das Spielende gesehen und sind wieder frei
+    for (const zuschauer of partie.zuschauer) {
+      zuschauer.zustand = IDLE;
+      zuschauer.zuschauerVon = null;
+      if (zuschauer.socket) zuschauer.socket.leave(partie.raum);
+    }
+    partie.zuschauer.clear();
     // Revanche vorbereiten: Beide merken sich den Gegner und ihre Farbe.
     // Hat jemand das Spiel verlassen, gibt es keine Revanche.
     if (spiel.grund !== 'disconnect') {
@@ -249,6 +276,47 @@ function erstelleServer(optionen = {}) {
       blau.nachSpiel = { gegner: rot, farbe: 'blue', revanche: false, privat: partie.privat };
     }
     partien.delete(partie.id);
+    lobbyAktualisieren();
+  }
+
+  // ---------- Zuschauen ----------
+
+  // Alle im Spielraum erfahren, wie viele gerade zuschauen
+  function sendeZuschauerzahl(partie) {
+    io.to(partie.raum).emit('spectators', { count: partie.zuschauer.size });
+  }
+
+  // Zuschauen beginnen: nur bei laufenden, öffentlichen Spielen
+  function beginneZuschauen(sp, spielId) {
+    const partie = Number.isInteger(spielId) ? partien.get(spielId) : undefined;
+    if (!partie || partie.privat) {
+      sp.socket.emit('spectateError', { reason: 'Dieses Spiel gibt es nicht mehr oder es ist privat.' });
+      return;
+    }
+    beendeNachSpiel(sp);
+    sp.zustand = ZUSCHAUEND;
+    sp.zuschauerVon = partie;
+    partie.zuschauer.add(sp);
+    sp.socket.join(partie.raum);
+    sp.socket.emit('spectateStart', {
+      gameId: partie.id,
+      players: namenVon(partie),
+      timeMs: einstellungen.zeitMs,
+      chat: partie.chat,
+    });
+    sp.socket.emit('state', zustandFuer(partie));
+    sendeZuschauerzahl(partie);
+    lobbyAktualisieren();
+  }
+
+  function beendeZuschauen(sp) {
+    const partie = sp.zuschauerVon;
+    sp.zuschauerVon = null;
+    sp.zustand = IDLE;
+    if (!partie) return;
+    partie.zuschauer.delete(sp);
+    if (sp.socket) sp.socket.leave(partie.raum);
+    sendeZuschauerzahl(partie);
     lobbyAktualisieren();
   }
 
@@ -390,7 +458,7 @@ function erstelleServer(optionen = {}) {
     sp.privatCode = null;
   }
 
-  // Beendet, was der Spieler gerade tut (warten / spielen) → danach IDLE.
+  // Beendet, was der Spieler gerade tut (warten / spielen / zuschauen) → danach IDLE.
   // grund: 'resign' (aufgegeben) oder 'disconnect' (Verbindung weg / abgemeldet)
   function verlasseAktivitaet(sp, grund) {
     if (sp.zustand === WARTEND) {
@@ -400,6 +468,8 @@ function erstelleServer(optionen = {}) {
       const partie = sp.partie;
       partie.spiel.beendeDurch(sp.farbe, grund, Date.now());
       beendePartie(partie);
+    } else if (sp.zustand === ZUSCHAUEND) {
+      beendeZuschauen(sp);
     }
     sp.zustand = IDLE;
   }
@@ -441,6 +511,7 @@ function erstelleServer(optionen = {}) {
         farbe: null,
         privatCode: null,     // Code des eigenen privaten Raums (nur beim Warten)
         nachSpiel: null,      // nach Spielende: { gegner, farbe, revanche, privat }
+        zuschauerVon: null,   // Partie, der gerade zugeschaut wird
         letzterChat: 0,       // Zeitpunkt der letzten Chat-Nachricht (Rate-Limit)
         letzteReaktion: 0,
       };
@@ -473,6 +544,20 @@ function erstelleServer(optionen = {}) {
       const sp = spieler();
       if (!sp || sp.zustand !== IDLE) return;
       wuenscheRevanche(sp);
+    });
+
+    // Zuschauen: { gameId } aus der Lobby-Liste
+    an('spectate', daten => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IDLE) return;
+      beginneZuschauen(sp, istObjekt(daten) ? daten.gameId : undefined);
+    });
+
+    an('stopSpectating', () => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== ZUSCHAUEND) return;
+      beendeZuschauen(sp);
+      socket.emit('spectateStopped');
     });
 
     // Spielende-Bildschirm verlassen ("Zur Lobby") → keine Revanche mehr
@@ -541,9 +626,10 @@ function erstelleServer(optionen = {}) {
         }
         return;
       }
-      sendeZustand(partie);                                   // an beide Spieler
+      sendeZustand(partie);                                   // an beide Spieler (+ Zuschauer)
       if (partie.spiel.beendet) beendePartie(partie);
       else planeUhr(partie);
+      if (!partie.privat) lobbyAktualisieren(true);           // Zugzahl in der Lobby-Liste
     }
 
     // Chat-Nachricht: { text } – höchstens eine pro Sekunde
@@ -640,11 +726,14 @@ function erstelleServer(optionen = {}) {
   // Überblick über alles, was im Speicher liegt (für Tests und Lasttest)
   function diagnose() {
     const spielRaeume = [...io.of('/').adapter.rooms.keys()].filter(r => r.startsWith('spiel-'));
+    let zuschauer = 0;
+    for (const partie of partien.values()) zuschauer += partie.zuschauer.size;
     return {
       spieler: spielerListe.size,
       warteschlange: warteschlange.length,
       partien: partien.size,
       privateRaeume: privateRaeume.size,
+      zuschauer,
       raeume: spielRaeume.length,
       timer: aktiveTimer.size,
       fehler: fehlerAnzahl,

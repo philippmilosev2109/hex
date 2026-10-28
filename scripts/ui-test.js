@@ -134,6 +134,20 @@ async function durchlauf(browser, url, groesse) {
   await blau.click('polygon.feld[data-r="8"][data-c="8"]', { force: true });
   if (await steinAnzahl(blau) !== steine) throw new Error('Client hat selbst einen Stein gesetzt');
 
+  // Zuschauer: sieht das Spiel in der Lobby-Liste, schaut zu, sieht das Spielende
+  const z = await neueSeite(browser, url, groesse, `${groesse.name}/Zoe`);
+  await z.fill('#name-eingabe', 'Zoe');
+  await z.click('#knopf-spielen');
+  await z.waitForSelector('#spiele-liste .spiel-eintrag');
+  await foto(z, `${groesse.name}-1d-lobby-spiele`);
+  await z.click('#spiele-liste .spiel-eintrag button');
+  await z.waitForSelector('#ansicht-spiel:not([hidden])');
+  await z.waitForFunction(n => document.querySelectorAll('.steine .stein').length === n, steine);
+  await rot.waitForSelector('#zuschauer-anzeige:not([hidden])');
+  if (!(await z.isVisible('#zuschauer-hinweis'))) throw new Error('Zuschauer-Hinweis fehlt');
+  if (await z.isVisible('#knopf-aufgeben')) throw new Error('Zuschauer sieht "Aufgeben"');
+  await foto(z, `${groesse.name}-5-zuschauer`);
+
   // Rot spielt die Spalte 0 zu Ende → Sieg
   for (let r = 4; r < 11; r++) {
     await zug(rot, blau, r, 0, ++steine);
@@ -152,6 +166,13 @@ async function durchlauf(browser, url, groesse) {
   await foto(rot, `${groesse.name}-4-spielende-sieger`);
   await foto(blau, `${groesse.name}-4-spielende-verlierer`);
   await pruefeBreite(rot, 'Spielende');
+
+  // Zuschauer sieht das Spielende und kehrt zur Lobby zurück
+  await z.waitForSelector('#spielende:not([hidden])');
+  await foto(z, `${groesse.name}-5b-zuschauer-ende`);
+  await z.click('#knopf-zuschauer-lobby');
+  await z.waitForSelector('#ansicht-lobby:not([hidden])');
+  await z.context().close();
 
   // 5. Revanche: Rot fragt, Blau sieht das Angebot und nimmt an → Farben getauscht
   await rot.click('#knopf-revanche');

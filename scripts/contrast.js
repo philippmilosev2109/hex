@@ -38,6 +38,8 @@ const PAARE = [
   ['--rot-text', '--flaeche-tief', TEXT, 'Uhr unter 20 Sekunden'],
   ['--rot-text', '--uhr-knapp', TEXT, 'Uhr unter 20 Sekunden (Puls-Hintergrund)'],
   ['--text', '--uhr-knapp', TEXT, 'Schrift auf Puls-Hintergrund'],
+  ['--rot-text', '--flaeche-hoch', TEXT, 'Roter Name in der Liste laufender Spiele'],
+  ['--blau-text', '--flaeche-hoch', TEXT, 'Blauer Name in der Liste laufender Spiele'],
   ['--blau-text', '--flaeche', TEXT, '"Blau ↔" im Regeltext'],
   ['--blau-text', '--flaeche-oben', TEXT, '"Blau ↔" im Regeltext (oben)'],
   ['--blau-text', '--flaeche-tief', TEXT, '"Swap-Regel:" im Erklärtext, blauer Name im Chat'],

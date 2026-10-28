@@ -26,6 +26,7 @@ const app = {
   zeitWarnung: false,  // Warnton "Zeit knapp" schon gespielt?
   tickSekunde: null,   // letzte Sekunde, in der das Ticken kam (unter 10 s)
   revanche: 'offen',   // Revanche-Zustand nach Spielende (siehe zeigeRevanche)
+  zuschauer: false,    // schauen wir gerade nur zu?
 };
 
 const wenigerBewegung = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -120,11 +121,54 @@ function mehrzahl(anzahl, einzahl, mehrzahlForm) {
   return `${anzahl} ${anzahl === 1 ? einzahl : mehrzahlForm}`;
 }
 
-// Live-Anzeige "X Spieler online · Y laufende Spiele"
+// Live-Anzeige "X Spieler online · Y laufende Spiele" und Liste zum Zuschauen
 socket.on('lobby', daten => {
   $('#lobby-online').textContent = `${mehrzahl(daten.online, 'Spieler', 'Spieler')} online`;
   $('#lobby-spiele').textContent = mehrzahl(daten.games, 'laufendes Spiel', 'laufende Spiele');
+  zeigeSpieleliste(daten.list || []);
 });
+
+// Ein Eintrag pro öffentlichem Spiel: "Milo vs. Nico · Zug 14" + Knopf "Zuschauen"
+function zeigeSpieleliste(liste) {
+  const eintraege = liste.map(spiel => {
+    const eintrag = document.createElement('li');
+    eintrag.className = 'spiel-eintrag';
+
+    const namen = document.createElement('span');
+    namen.className = 'spiel-namen';
+    const rot = document.createElement('span');
+    rot.className = 'name-red';
+    rot.textContent = spiel.red;
+    const blau = document.createElement('span');
+    blau.className = 'name-blue';
+    blau.textContent = spiel.blue;
+    namen.append(rot, ' vs. ', blau);
+
+    const info = document.createElement('span');
+    info.className = 'spiel-info';
+    info.textContent = `Zug ${spiel.moves + 1}` +
+      (spiel.spectators ? ` · ${mehrzahl(spiel.spectators, 'Zuschauer', 'Zuschauer')}` : '');
+
+    const text = document.createElement('span');
+    text.className = 'spiel-text';
+    text.append(namen, info);
+
+    const knopf = document.createElement('button');
+    knopf.type = 'button';
+    knopf.className = 'knopf knopf-sekundaer knopf-klein';
+    knopf.textContent = 'Zuschauen';
+    knopf.setAttribute('aria-label', `Spiel von ${spiel.red} (Rot) gegen ${spiel.blue} (Blau) zuschauen`);
+    knopf.addEventListener('click', () => socket.emit('spectate', { gameId: spiel.id }));
+
+    eintrag.append(text, knopf);
+    return eintrag;
+  });
+  $('#spiele-liste').replaceChildren(...eintraege);
+  $('#spiele-leer').hidden = liste.length > 0;
+}
+
+socket.on('spectateError', ({ reason }) => meldung(reason, 'fehler'));
+socket.on('spectateStopped', () => wechsleZu('lobby'));
 
 $('#knopf-schnell').addEventListener('click', () => socket.emit('queue'));
 $('#knopf-privat').addEventListener('click', () => socket.emit('createPrivate'));
@@ -261,8 +305,10 @@ function setzeUhren(clock, turn, laeuft) {
 
 // ---------- 3. Spielen ----------
 
-socket.on('gameStart', daten => {
-  app.farbe = daten.color;
+// Spielansicht für ein neues Spiel vorbereiten – als Spieler oder als Zuschauer
+function oeffneSpielansicht(daten, { zuschauer }) {
+  app.zuschauer = zuschauer;
+  app.farbe = zuschauer ? null : daten.color;
   app.spieler = daten.players;
   app.laeuft = true;
   app.zugGesendet = false;
@@ -277,6 +323,17 @@ socket.on('gameStart', daten => {
     eintrag.querySelector('.spieler-name').textContent = daten.players[farbe];
     eintrag.querySelector('.du').hidden = farbe !== app.farbe;
   }
+
+  // Zuschauer: Hinweis statt Aufgeben, Chat nur lesen, eigene Knöpfe am Spielende
+  $('#zuschauer-hinweis').hidden = !zuschauer;
+  $('#knopf-aufgeben').hidden = zuschauer;
+  $('#knopf-zuschauen-beenden').hidden = !zuschauer;
+  $('#chat-bedienung').hidden = zuschauer;
+  $('#knopf-revanche').hidden = zuschauer;
+  $('#knopf-nochmal').hidden = zuschauer;
+  $('#knopf-zuschauer-lobby').hidden = !zuschauer;
+  zeigeZuschauerzahl(0);
+
   clearTimeout(app.endeTimer);
   app.zeitWarnung = false;
   app.tickSekunde = null;
@@ -291,7 +348,25 @@ socket.on('gameStart', daten => {
   setzeUhren({ red: daten.timeMs, blue: daten.timeMs }, 'red', false);
   wechsleZu('spiel');
   aktualisiereChat();
+}
+
+socket.on('gameStart', daten => oeffneSpielansicht(daten, { zuschauer: false }));
+
+// Zuschauen: gleiche Ansicht, dazu der bisherige Chat; das Brett kommt mit "state"
+socket.on('spectateStart', daten => {
+  oeffneSpielansicht(daten, { zuschauer: true });
+  for (const nachricht of daten.chat || []) zeigeChatNachricht(nachricht);
 });
+
+// Zuschauerzahl oben im Panel (für Spieler und Zuschauer)
+function zeigeZuschauerzahl(anzahl) {
+  $('#zuschauer-zahl').textContent = `${anzahl} ${anzahl === 1 ? 'Zuschauer' : 'Zuschauer'}`;
+  $('#zuschauer-anzeige').hidden = anzahl === 0;
+}
+socket.on('spectators', ({ count }) => zeigeZuschauerzahl(count));
+
+$('#knopf-zuschauen-beenden').addEventListener('click', () => socket.emit('stopSpectating'));
+$('#knopf-zuschauer-lobby').addEventListener('click', () => wechsleZu('lobby'));
 
 socket.on('state', zustand => {
   const vorher = app.zustand;
@@ -353,8 +428,8 @@ function aktualisiereStatus() {
   brett.setzeInteraktiv(istMeinZug(), app.farbe);
 
   // Browser-Tab zeigt an, wenn man dran ist (praktisch bei mehreren Tabs)
-  const dran = app.laeuft && zustand?.turn === app.farbe;
-  document.title = dran ? '● Du bist am Zug – Hex' : 'Hex';
+  const dran = app.laeuft && !app.zuschauer && zustand?.turn === app.farbe;
+  document.title = dran ? '● Du bist am Zug – Hex' : (app.zuschauer ? 'Zuschauen – Hex' : 'Hex');
 
   const status = $('#status');
   status.classList.remove('status-red', 'status-blue');
@@ -370,7 +445,9 @@ function aktualisiereStatus() {
     $('#status-text').textContent = 'Klicke auf ein freies Feld';
   } else {
     $('#status-titel').textContent = `${app.spieler[zustand.turn]} ist am Zug`;
-    $('#status-text').textContent = 'Warte auf den Zug deines Gegners';
+    $('#status-text').textContent = app.zuschauer
+      ? `${FARBNAME[zustand.turn]} · Du schaust zu`
+      : 'Warte auf den Zug deines Gegners';
   }
 
   for (const farbe of ['red', 'blue']) {
@@ -446,15 +523,17 @@ socket.on('gameOver', ende => {
   aktualisiereStatus();
   setzeAufgebenZurueck();
 
-  if (ende.winner === app.farbe) {
+  if (app.zuschauer) {
+    sound.gegner();                 // Zuschauer: neutraler Ton, kein Jubel
+  } else if (ende.winner === app.farbe) {
     sound.sieg();
     konfetti();
   } else {
     sound.niederlage();
   }
 
-  // Revanche geht nur, wenn der Gegner noch da ist
-  zeigeRevanche(ende.reason === 'disconnect' ? 'unmoeglich' : 'offen');
+  // Revanche geht nur, wenn der Gegner noch da ist (und nur für Spieler)
+  zeigeRevanche(ende.reason === 'disconnect' || app.zuschauer ? 'unmoeglich' : 'offen');
 
   // Erst den Gewinnpfad wachsen lassen, dann die Karte einblenden
   const warten = ende.path && !wenigerBewegung() ? Math.min(pfadDauer + 500, 2200) : 0;
@@ -476,12 +555,14 @@ function zeigeSpielende(ende) {
     text = verlierer === app.farbe ? 'Du hast aufgegeben.' : `${namen[verlierer]} hat aufgegeben.`;
   } else if (ende.reason === 'timeout') {
     text = verlierer === app.farbe ? 'Deine Zeit ist abgelaufen.' : `Die Zeit von ${namen[verlierer]} ist abgelaufen.`;
+  } else if (app.zuschauer) {
+    text = `${namen[verlierer]} hat das Spiel verlassen.`;
   } else {
     text = verlierer === app.farbe ? 'Du hast das Spiel verlassen.' : 'Gegner hat das Spiel verlassen.';
   }
-  const gewonnen = ende.winner === app.farbe;
-  zeigeEndeKarte(`${FARBNAME[ende.winner]} gewinnt!`, text,
-    gewonnen ? 'Glückwunsch, du hast gewonnen!' : 'Diesmal hat es nicht gereicht.', ende.winner);
+  let ergebnis = ende.winner === app.farbe ? 'Glückwunsch, du hast gewonnen!' : 'Diesmal hat es nicht gereicht.';
+  if (app.zuschauer) ergebnis = `Glückwunsch an ${namen[ende.winner]}!`;
+  zeigeEndeKarte(`${FARBNAME[ende.winner]} gewinnt!`, text, ergebnis, ende.winner);
 }
 
 function zeigeEndeKarte(titel, text, ergebnis, farbe) {
@@ -592,7 +673,9 @@ function aktualisiereChat() {
 }
 
 // Neue Nachricht: Name in Spielerfarbe, Text NUR per textContent (kein HTML!)
-socket.on('chat', nachricht => {
+socket.on('chat', nachricht => zeigeChatNachricht(nachricht));
+
+function zeigeChatNachricht(nachricht) {
   const eintrag = document.createElement('li');
   const name = document.createElement('strong');
   name.className = `chat-name ${nachricht.color}`;
@@ -608,7 +691,7 @@ socket.on('chat', nachricht => {
     ungelesen++;
     zeigeUngelesen();
   }
-});
+}
 
 socket.on('chatError', ({ reason }) => meldung(reason, 'fehler'));
 
@@ -671,7 +754,13 @@ socket.on('connect', () => {
     meldung('Die Verbindung war unterbrochen – dein privater Code gilt nicht mehr.', 'fehler');
   }
 
-  if (app.laeuft) {
+  if (app.zuschauer && app.ansicht === 'spiel') {
+    // Zuschauer: einfach zurück in die Lobby
+    app.laeuft = false;
+    clearInterval(uhrIntervall);
+    wechsleZu('lobby');
+    meldung('Die Verbindung war unterbrochen – Zuschauen beendet.', 'fehler');
+  } else if (app.laeuft) {
     app.laeuft = false;
     clearInterval(uhrIntervall);
     aktualisiereStatus();

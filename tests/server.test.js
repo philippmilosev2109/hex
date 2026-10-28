@@ -480,6 +480,100 @@ describe('Chat und Reaktionen', () => {
   });
 });
 
+describe('Zuschauen', () => {
+  test('Lobby listet laufende öffentliche Spiele mit Namen und Zugzahl', async () => {
+    const zuschauer = await anmelden('Zoe');
+    const { rot, blau, startA } = await spielStarten('Anna', 'Ben');
+    await zug(rot, blau, 0, 0);
+    const lobby = await warteAufLobby(zuschauer, l => l.list.length === 1 && l.list[0].moves === 1);
+    expect(lobby.list[0]).toEqual({
+      id: startA.gameId,
+      red: startA.color === 'red' ? 'Anna' : 'Ben',
+      blue: startA.color === 'red' ? 'Ben' : 'Anna',
+      moves: 1,
+      spectators: 0,
+    });
+  });
+
+  test('private Spiele erscheinen nicht und können nicht angeschaut werden', async () => {
+    const zuschauer = await anmelden('Zoe');
+    const a = await anmelden('A');
+    a.emit('createPrivate');
+    const { code } = await a.warteAuf('waiting');
+    const b = await anmelden('B');
+    b.emit('joinPrivate', { code });
+    const start = await a.warteAuf('gameStart');
+    const lobby = await warteAufLobby(zuschauer, l => l.games === 1);
+    expect(lobby.list).toEqual([]);
+    zuschauer.emit('spectate', { gameId: start.gameId });
+    expect((await zuschauer.warteAuf('spectateError')).reason).toMatch(/privat/);
+  });
+
+  test('Zuschauer sieht das Brett live, die Spieler sehen die Zuschauerzahl', async () => {
+    const { rot, blau, startA } = await spielStarten('Anna', 'Ben');
+    await zug(rot, blau, 3, 3);
+    const zuschauer = await anmelden('Zoe');
+    zuschauer.emit('spectate', { gameId: startA.gameId });
+    const start = await zuschauer.warteAuf('spectateStart');
+    expect(start.players).toEqual({ red: expect.any(String), blue: expect.any(String) });
+    expect((await zuschauer.warteAuf('state')).board[3][3]).toBe('red');
+    expect(await rot.warteAuf('spectators')).toEqual({ count: 1 });
+    expect(await blau.warteAuf('spectators')).toEqual({ count: 1 });
+
+    await zug(blau, rot, 4, 4);
+    expect((await zuschauer.warteAuf('state')).board[4][4]).toBe('blue');
+
+    zuschauer.emit('stopSpectating');
+    await zuschauer.warteAuf('spectateStopped');
+    expect(await rot.warteAuf('spectators')).toEqual({ count: 0 });
+    expect(await blau.warteAuf('spectators')).toEqual({ count: 0 });
+  });
+
+  test('Zuschauer kann nicht ziehen, tauschen, aufgeben oder chatten', async () => {
+    const { rot, blau, startA } = await spielStarten();
+    const zuschauer = await anmelden('Zoe');
+    zuschauer.emit('spectate', { gameId: startA.gameId });
+    await zuschauer.warteAuf('spectateStart');
+    await zuschauer.warteAuf('state');
+    for (const ereignis of ['move', 'swap', 'resign', 'chat', 'reaction', 'queue', 'rematch']) {
+      zuschauer.emit(ereignis, { row: 0, col: 0, text: 'hi', emoji: '👍' });
+    }
+    await pause(150);
+    expect(zuschauer.hat('state')).toBe(false);
+    expect(zuschauer.hat('invalid')).toBe(false);
+    expect(rot.hat('chat')).toBe(false);
+    expect(blau.hat('gameOver')).toBe(false);
+  });
+
+  test('Spielende: Zuschauer bekommt gameOver und ist danach wieder frei', async () => {
+    const { rot, blau, startA } = await spielStarten();
+    const zuschauer = await anmelden('Zoe');
+    zuschauer.emit('spectate', { gameId: startA.gameId });
+    await zuschauer.warteAuf('spectateStart');
+    rot.emit('resign');
+    expect((await zuschauer.warteAuf('gameOver')).reason).toBe('resign');
+    zuschauer.emit('queue');
+    await zuschauer.warteAuf('waiting');
+    expect(server.diagnose().zuschauer).toBe(0);
+    await blau.warteAuf('gameOver');
+  });
+
+  test('ungültige Spiel-IDs und Trennen der Verbindung', async () => {
+    const { rot, startA } = await spielStarten();
+    const zuschauer = await anmelden('Zoe');
+    for (const gameId of [9999, '1', null, 1.5]) {
+      zuschauer.emit('spectate', { gameId });
+      await zuschauer.warteAuf('spectateError');
+    }
+    zuschauer.emit('spectate', { gameId: startA.gameId });
+    await zuschauer.warteAuf('spectateStart');
+    await rot.warteAuf('spectators');
+    zuschauer.trennen();
+    expect(await rot.warteAuf('spectators')).toEqual({ count: 0 });
+    expect(server.diagnose().zuschauer).toBe(0);
+  });
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();
@@ -690,7 +784,7 @@ describe('Robustheit', () => {
     clients.forEach(c => c.trennen());
     await warteBis(() => server.diagnose().spieler === 0 && server.diagnose().timer === 0);
     expect(server.diagnose()).toEqual({
-      spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, raeume: 0, timer: 0, fehler: 0,
+      spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, zuschauer: 0, raeume: 0, timer: 0, fehler: 0,
     });
   });
 });

@@ -22,7 +22,7 @@ process.env.HEX_ZEIT_MS = process.env.HEX_ZEIT_MS || '10000';
 const VERHALTEN = [
   'normal', 'normal', 'normal',
   'aufgeber', 'abbrecher', 'chaot', 'zoegerer', 'flooder',
-  'privatErsteller', 'privatGast', 'schlaefer', 'spammer',
+  'privatErsteller', 'privatGast', 'schlaefer', 'spammer', 'zuschauer',
 ];
 const REAKTIONEN = ['👍', '😮', '😅', '🔥', '👏', '🤝'];
 
@@ -52,6 +52,7 @@ const statistik = {
   chatEmpfangen: 0,
   chatAbgelehnt: 0,      // vom Server gebremste/abgelehnte Nachrichten
   reaktionen: 0,
+  zuschauSitzungen: 0,
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -128,6 +129,9 @@ class Bot {
       s.on('privateError', ({ reason }) => this.codeFehler(reason));
       s.on('rematchOffered', () => this.revancheAngebot());
       s.on('rematchCancelled', () => this.weiterNachSpiel());
+      s.on('lobby', daten => { this.lobby = daten; });
+      s.on('spectateStart', daten => this.zuschauenBeginnt(daten));
+      s.on('spectateError', () => this.zuschauen());
       s.on('chat', nachricht => this.chatEmpfangen(nachricht));
       s.on('chatError', () => { statistik.chatAbgelehnt++; });
       s.on('reaction', () => { statistik.reaktionen++; });
@@ -139,8 +143,9 @@ class Bot {
     });
   }
 
-  // Nach dem Anmelden: je nach Verhalten privat spielen oder in die Warteschlange
+  // Nach dem Anmelden: je nach Verhalten privat spielen, zuschauen oder in die Warteschlange
   losSpielen() {
+    if (this.verhalten === 'zuschauer') return this.zuschauen();
     if (this.verhalten === 'privatErsteller') return this.socket.emit('createPrivate');
     if (this.verhalten === 'privatGast') return this.privatBeitreten();
     return this.inWarteschlange();
@@ -160,6 +165,28 @@ class Bot {
       await pause(50);
     }
     if (!this.fertig) this.inWarteschlange();                    // kein Code da → normal spielen
+  }
+
+  // Zuschauer: ein zufälliges Spiel aus der Lobby-Liste wählen (bis zu 4 s warten)
+  async zuschauen() {
+    const ende = Date.now() + 4000;
+    while (!this.fertig && Date.now() < ende) {
+      const liste = this.lobby?.list || [];
+      if (liste.length) {
+        this.socket.emit('spectate', { gameId: liste[zufall(0, liste.length - 1)].id });
+        return;
+      }
+      await pause(100);
+    }
+    this.verlassen();
+  }
+
+  zuschauenBeginnt(daten) {
+    statistik.zuschauSitzungen++;
+    this.spielId = daten.gameId;
+    this.farbe = null;
+    this.brett = null;
+    this.zugzahl = -1;
   }
 
   codeFehler(grund) {
@@ -244,6 +271,12 @@ class Bot {
   neuerZustand(zustand) {
     clearTimeout(this.antwortTimer);
     this.brett = zustand.board;
+    if (this.verhalten === 'zuschauer') {
+      // Zuschauer prüfen nur: Die Zugzahl darf nie zurückgehen
+      if (zustand.moves.length < this.zugzahl) fehler(`${this.name}: Zuschauer sah Zugzahl sinken`);
+      this.zugzahl = zustand.moves.length;
+      return;
+    }
     if (this.verhalten === 'chaot') this.chaos();
     if (zustand.turn !== this.farbe) return;
 
@@ -325,7 +358,11 @@ class Bot {
     this.spielId = null;
     this.farbe = null;
     this.spieleUebrig--;
-    if (this.spieleUebrig <= 0) {
+    if (this.verhalten === 'zuschauer') {
+      // Noch ein Spiel anschauen oder gehen
+      if (this.spieleUebrig > 0) setTimeout(() => !this.fertig && this.zuschauen(), zufall(10, 200));
+      else setTimeout(() => this.verlassen(), zufall(10, 200));
+    } else if (this.spieleUebrig <= 0) {
       setTimeout(() => this.verlassen(), zufall(10, 200));
     } else if (ende.reason !== 'disconnect' && Math.random() < 0.5) {
       // Revanche anbieten; kommt nach 800 ms nichts, normal weitersuchen
@@ -409,9 +446,10 @@ async function main() {
 
   if (statistik.privateSpiele === 0) fehler('Es wurde kein einziges privates Spiel gespielt');
   if (statistik.chatAbgelehnt === 0) fehler('Das Chat-Rate-Limit hat nie gegriffen');
+  if (statistik.zuschauSitzungen === 0) fehler('Kein Bot hat zugeschaut');
 
   // Server muss aufgeräumt haben …
-  const leer = { spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, raeume: 0, timer: 0 };
+  const leer = { spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, zuschauer: 0, raeume: 0, timer: 0 };
   const bisLeer = Date.now() + 3000;
   let diagnose = server.diagnose();
   while (Date.now() < bisLeer && Object.keys(leer).some(k => diagnose[k] !== 0)) {
@@ -445,6 +483,7 @@ async function main() {
   console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}, Revanchen: ${statistik.revanchen}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log(`Chat: ${statistik.chatEmpfangen} Nachrichten zugestellt, ${statistik.chatAbgelehnt} abgelehnt, ${statistik.reaktionen} Reaktionen`);
+  console.log(`Zuschauen: ${statistik.zuschauSitzungen} Sitzungen`);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);
