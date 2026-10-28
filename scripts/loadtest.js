@@ -19,10 +19,17 @@ const MAX_DAUER_MS = 120000;
 const VERHALTEN = [
   'normal', 'normal', 'normal',
   'aufgeber', 'abbrecher', 'chaot', 'zoegerer', 'flooder',
+  'privatErsteller', 'privatGast',
 ];
 
 const zufall = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Private Spiele: Ersteller-Bots "geben" ihren Code über diese Liste an Gast-Bots weiter
+const CODE_ZEICHEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const offeneCodes = [];
+const alleCodes = new Set();
+const zufallsCode = () => Array.from({ length: 4 }, () => CODE_ZEICHEN[zufall(0, CODE_ZEICHEN.length - 1)]).join('');
 
 // Kaputte Daten, die ein manipulierter Client schicken könnte
 const MUELL = [
@@ -34,6 +41,8 @@ const MUELL = [
 // ---------- Auswertung ----------
 const statistik = {
   spieleGestartet: 0,
+  privateSpiele: 0,
+  codeFehler: 0,         // erwartete Fehler bei falschen Codes
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -100,15 +109,45 @@ class Bot {
       const s = this.socket;
       s.on('connect', () => s.emit('join', { name: this.name }));
       s.on('connect_error', err => { fehler(`${this.name}: connect_error ${err.message}`); this.fertigMachen(); });
-      s.on('joined', () => this.inWarteschlange());
+      s.on('joined', () => this.losSpielen());
       s.on('joinError', ({ reason }) => fehler(`${this.name}: joinError ${reason}`));
-      s.on('waiting', () => this.wartet());
+      s.on('waiting', daten => this.wartet(daten));
+      s.on('privateError', ({ reason }) => this.codeFehler(reason));
       s.on('gameStart', daten => this.spielStart(daten));
       s.on('state', zustand => this.neuerZustand(zustand));
       s.on('invalid', () => this.ungueltig());
       s.on('gameOver', ende => this.spielEnde(ende));
       s.on('disconnect', () => this.fertigMachen());
     });
+  }
+
+  // Nach dem Anmelden: je nach Verhalten privat spielen oder in die Warteschlange
+  losSpielen() {
+    if (this.verhalten === 'privatErsteller') return this.socket.emit('createPrivate');
+    if (this.verhalten === 'privatGast') return this.privatBeitreten();
+    return this.inWarteschlange();
+  }
+
+  // Gast: erst zwei falsche Codes (müssen sauber abgelehnt werden), dann ein echter
+  async privatBeitreten() {
+    this.erlaubteCodeFehler = 2;
+    this.socket.emit('joinPrivate', { code: 'AB' });            // falsches Format
+    let unbekannt;
+    do { unbekannt = zufallsCode(); } while (alleCodes.has(unbekannt));
+    this.socket.emit('joinPrivate', { code: unbekannt });        // gibt es nicht
+    const ende = Date.now() + 3000;
+    while (!this.fertig && Date.now() < ende) {
+      const code = offeneCodes.shift();
+      if (code) return this.socket.emit('joinPrivate', { code: code.toLowerCase() });
+      await pause(50);
+    }
+    if (!this.fertig) this.inWarteschlange();                    // kein Code da → normal spielen
+  }
+
+  codeFehler(grund) {
+    statistik.codeFehler++;
+    if (!this.erlaubteCodeFehler) fehler(`${this.name}: unerwarteter privateError "${grund}"`);
+    else this.erlaubteCodeFehler--;
   }
 
   inWarteschlange() {
@@ -131,12 +170,16 @@ class Bot {
     }
   }
 
-  // Findet sich kein Gegner mehr (ungerade Anzahl), gibt der Bot nach 3 s auf
-  wartet() {
+  // Findet sich kein Gegner mehr (ungerade Anzahl), gibt der Bot nach ein paar Sekunden auf
+  wartet(daten) {
+    if (daten.mode === 'private') {
+      offeneCodes.push(daten.code);
+      alleCodes.add(daten.code);
+    }
     clearTimeout(this.warteTimer);
     this.warteTimer = setTimeout(() => {
       if (this.spielId === null) this.verlassen();
-    }, 3000);
+    }, daten.mode === 'private' ? 6000 : 3000);
   }
 
   spielStart(daten) {
@@ -148,6 +191,7 @@ class Bot {
     if (!spiele.has(daten.gameId)) {
       spiele.set(daten.gameId, { teilnehmer: new Set(), farben: new Set(), beendet: false, verlassenVon: new Set() });
       statistik.spieleGestartet++;
+      if (daten.private) statistik.privateSpiele++;
     }
     const spiel = spiele.get(daten.gameId);
     spiel.teilnehmer.add(this.name);
@@ -277,8 +321,10 @@ async function main() {
     fehler(`${statistik.ungueltigeZuegeNormal} gültige Züge wurden als ungültig abgelehnt`);
   }
 
+  if (statistik.privateSpiele === 0) fehler('Es wurde kein einziges privates Spiel gespielt');
+
   // Server muss aufgeräumt haben …
-  const leer = { spieler: 0, warteschlange: 0, partien: 0, raeume: 0, timer: 0 };
+  const leer = { spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, raeume: 0, timer: 0 };
   const bisLeer = Date.now() + 3000;
   let diagnose = server.diagnose();
   while (Date.now() < bisLeer && Object.keys(leer).some(k => diagnose[k] !== 0)) {
@@ -308,7 +354,8 @@ async function main() {
   console.error = originalError;
 
   const dauer = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`Spiele gestartet: ${statistik.spieleGestartet}, Züge: ${statistik.zuege}, Dauer: ${dauer} s`);
+  console.log(`Spiele gestartet: ${statistik.spieleGestartet} (davon privat: ${statistik.privateSpiele}), Züge: ${statistik.zuege}, Dauer: ${dauer} s`);
+  console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Server-Zustand am Ende:', diagnose);

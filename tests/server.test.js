@@ -190,6 +190,110 @@ describe('Warteschlange und Matching', () => {
   });
 });
 
+describe('Private Spiele', () => {
+  const CODE_MUSTER = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+
+  async function privatErstellen(name = 'Ersteller') {
+    const client = await anmelden(name);
+    client.emit('createPrivate');
+    const warten = await client.warteAuf('waiting');
+    return { client, code: warten.code, warten };
+  }
+
+  test('Code erstellen und mit dem Code beitreten → privates Spiel startet', async () => {
+    const { client: a, code, warten } = await privatErstellen('Anna');
+    expect(warten.mode).toBe('private');
+    expect(code).toMatch(CODE_MUSTER);
+    expect(server.diagnose().privateRaeume).toBe(1);
+
+    const b = await anmelden('Ben');
+    b.emit('joinPrivate', { code: ` ${code.toLowerCase()} ` }); // Kleinbuchstaben/Leerzeichen sind ok
+    const [startA, startB] = await Promise.all([a.warteAuf('gameStart'), b.warteAuf('gameStart')]);
+    expect(startA.private).toBe(true);
+    expect(startA.gameId).toBe(startB.gameId);
+    expect(startA.opponent).toBe('Ben');
+    expect(server.diagnose().privateRaeume).toBe(0);
+  });
+
+  test('ungültige und unbekannte Codes werden sauber gemeldet', async () => {
+    const client = await anmelden('Ben');
+    for (const code of ['', 'ABC', 'ABCDE', '0O1I', 'AB-D', 42, null]) {
+      client.emit('joinPrivate', { code });
+      expect((await client.warteAuf('privateError')).reason).toMatch(/4 Zeichen/);
+    }
+    client.emit('joinPrivate', 'ABCD');
+    await client.warteAuf('privateError');
+    client.emit('joinPrivate', { code: 'ZZZZ' });
+    expect((await client.warteAuf('privateError')).reason).toMatch(/Kein offenes Spiel/);
+  });
+
+  test('ein Code gilt nur einmal', async () => {
+    const { client: a, code } = await privatErstellen();
+    const b = await anmelden('B');
+    b.emit('joinPrivate', { code });
+    await a.warteAuf('gameStart');
+    const c = await anmelden('C');
+    c.emit('joinPrivate', { code });
+    await c.warteAuf('privateError');
+  });
+
+  test('Ersteller bricht ab → Code ungültig', async () => {
+    const { client: a, code } = await privatErstellen();
+    a.emit('cancel');
+    await a.warteAuf('cancelled');
+    expect(server.diagnose()).toMatchObject({ privateRaeume: 0, timer: expect.any(Number) });
+    const b = await anmelden('B');
+    b.emit('joinPrivate', { code });
+    await b.warteAuf('privateError');
+  });
+
+  test('Ersteller trennt die Verbindung → Raum wird aufgeräumt', async () => {
+    const { client: a } = await privatErstellen();
+    a.trennen();
+    await warteBis(() => server.diagnose().privateRaeume === 0 && server.diagnose().spieler === 0);
+  });
+
+  test('private Wartende werden nicht über die Warteschlange gematcht', async () => {
+    const { client: a } = await privatErstellen();
+    const b = await anmelden('B');
+    b.emit('queue');
+    await b.warteAuf('waiting');
+    await pause(100);
+    expect(a.hat('gameStart')).toBe(false);
+    expect(b.hat('gameStart')).toBe(false);
+  });
+
+  test('Codes sind eindeutig', async () => {
+    const codes = new Set();
+    for (let i = 0; i < 30; i++) {
+      const { code } = await privatErstellen(`P${i}`);
+      codes.add(code);
+    }
+    expect(codes.size).toBe(30);
+  });
+});
+
+describe('Private Spiele: Ablauf des Codes', () => {
+  beforeEach(async () => {
+    await server.stoppe();
+    server = await require('./helfer').starteTestServer({ privatAblaufMs: 300 });
+  });
+
+  test('abgelaufener Code: Ersteller wird informiert, Beitreten scheitert', async () => {
+    const a = await anmelden('A');
+    a.emit('createPrivate');
+    const { code } = await a.warteAuf('waiting');
+    await a.warteAuf('privateExpired', 2000);
+    expect(server.diagnose().privateRaeume).toBe(0);
+    const b = await anmelden('B');
+    b.emit('joinPrivate', { code });
+    await b.warteAuf('privateError');
+    // Ersteller ist wieder frei
+    a.emit('queue');
+    await a.warteAuf('waiting');
+  });
+});
+
 describe('Züge', () => {
   test('gültiger Zug geht als state an beide Spieler', async () => {
     const { rot, blau } = await spielStarten();
@@ -349,7 +453,7 @@ describe('Robustheit', () => {
     clients.forEach(c => c.trennen());
     await warteBis(() => server.diagnose().spieler === 0 && server.diagnose().timer === 0);
     expect(server.diagnose()).toEqual({
-      spieler: 0, warteschlange: 0, partien: 0, raeume: 0, timer: 0, fehler: 0,
+      spieler: 0, warteschlange: 0, partien: 0, privateRaeume: 0, raeume: 0, timer: 0, fehler: 0,
     });
   });
 });

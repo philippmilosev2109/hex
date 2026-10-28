@@ -19,6 +19,7 @@ const app = {
   laeuft: false,       // läuft gerade ein Spiel?
   zugGesendet: false,  // Zug abgeschickt, Antwort vom Server steht noch aus
   nachJoin: null,      // was nach "joined" passieren soll (z. B. 'queue')
+  wartemodus: null,    // beim Warten: 'queue' (Warteschlange) oder 'private' (eigener Code)
 };
 
 // Klick auf ein freies Feld → Zug an den Server schicken (nicht selbst setzen!)
@@ -105,16 +106,85 @@ socket.on('lobby', daten => {
 });
 
 $('#knopf-schnell').addEventListener('click', () => socket.emit('queue'));
+$('#knopf-privat').addEventListener('click', () => socket.emit('createPrivate'));
 $('#knopf-lobby-abmelden').addEventListener('click', () => socket.emit('logout'));
+
+// Privatem Spiel beitreten: Code erst im Browser prüfen, dann an den Server
+const CODE_ZEICHEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function zeigeCodeFehler(text) {
+  $('#code-fehler').textContent = text || '';
+  $('#code-fehler').hidden = !text;
+  $('#code-eingabe').setAttribute('aria-invalid', text ? 'true' : 'false');
+}
+
+$('#beitreten-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const code = $('#code-eingabe').value.replace(/\s/g, '').toUpperCase();
+  if (code.length !== 4) {
+    zeigeCodeFehler('Der Code hat genau 4 Zeichen.');
+  } else if (![...code].every(zeichen => CODE_ZEICHEN.includes(zeichen))) {
+    zeigeCodeFehler('Codes enthalten nur A–Z und 2–9 (ohne 0, O, 1 und I).');
+  } else {
+    zeigeCodeFehler(null);
+    socket.emit('joinPrivate', { code });
+    return;
+  }
+  $('#code-eingabe').focus();
+});
+
+socket.on('privateError', ({ reason }) => {
+  zeigeCodeFehler(reason);
+  $('#code-eingabe').focus();
+});
+
+socket.on('privateExpired', () => {
+  wechsleZu('lobby');
+  meldung('Dein privates Spiel ist abgelaufen. Erstelle einfach einen neuen Code.', 'fehler');
+});
 
 // ---------- 2. Warten ----------
 
-socket.on('waiting', () => {
+// mode 'queue' = Warteschlange, mode 'private' = eigener Raum mit Code
+socket.on('waiting', daten => {
+  const privat = daten.mode === 'private';
+  app.wartemodus = daten.mode;
   $('#warten-name').textContent = app.name;
+  $('#warten-titel').textContent = privat ? 'Privates Spiel erstellt' : 'Warte auf Gegner …';
+  $('#warten-text').textContent = privat
+    ? 'Gib diesen Code deinem Freund. Das Spiel startet, sobald er beitritt.'
+    : 'Sobald sich ein zweiter Spieler anmeldet, startet das Spiel automatisch.';
+  $('#privat-box').hidden = !privat;
+  if (privat) {
+    $('#privat-code').textContent = daten.code;
+    $('#knopf-kopieren').textContent = 'Code kopieren';
+  }
   wechsleZu('warten');
 });
 
-// Abbrechen: aus der Warteschlange zurück in die Lobby
+// Code in die Zwischenablage kopieren. Im lokalen Netz (http) gibt es die
+// moderne Clipboard-API oft nicht – dann der klassische Weg über ein Textfeld.
+$('#knopf-kopieren').addEventListener('click', async () => {
+  const code = $('#privat-code').textContent;
+  let kopiert = false;
+  try {
+    await navigator.clipboard.writeText(code);
+    kopiert = true;
+  } catch {
+    const feld = document.createElement('textarea');
+    feld.value = code;
+    feld.setAttribute('readonly', '');
+    feld.style.position = 'fixed';
+    feld.style.opacity = '0';
+    document.body.appendChild(feld);
+    feld.select();
+    try { kopiert = document.execCommand('copy'); } catch { kopiert = false; }
+    feld.remove();
+  }
+  $('#knopf-kopieren').textContent = kopiert ? 'Kopiert ✓' : 'Bitte von Hand abschreiben';
+});
+
+// Abbrechen: aus der Warteschlange bzw. dem privaten Raum zurück in die Lobby
 $('#knopf-abbrechen').addEventListener('click', () => socket.emit('cancel'));
 socket.on('cancelled', () => wechsleZu('lobby'));
 
@@ -128,6 +198,9 @@ socket.on('gameStart', daten => {
   app.zustand = null;
 
   $('#spiel-id').textContent = daten.gameId;
+  $('#privat-abzeichen').hidden = !daten.private;
+  $('#code-eingabe').value = '';
+  zeigeCodeFehler(null);
   for (const farbe of ['red', 'blue']) {
     const eintrag = $(`#spieler-${farbe}`);
     eintrag.querySelector('.spieler-name').textContent = daten.players[farbe];
@@ -276,10 +349,14 @@ socket.on('connect', () => {
   $('#verbindung').hidden = true;
   if (!app.name) return;   // war noch nicht angemeldet → nichts zu tun
 
-  // Der Server hat uns beim Abbruch abgemeldet → mit gleichem Namen neu anmelden
+  // Der Server hat uns beim Abbruch abgemeldet → mit gleichem Namen neu anmelden.
+  // Wer in der Warteschlange stand, stellt sich automatisch wieder an.
   const warWartend = app.ansicht === 'warten';
-  app.nachJoin = warWartend ? 'queue' : null;
+  app.nachJoin = warWartend && app.wartemodus === 'queue' ? 'queue' : null;
   socket.emit('join', { name: app.name });
+  if (warWartend && app.wartemodus === 'private') {
+    meldung('Die Verbindung war unterbrochen – dein privater Code gilt nicht mehr.', 'fehler');
+  }
 
   if (app.laeuft) {
     app.laeuft = false;

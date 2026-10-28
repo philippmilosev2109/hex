@@ -168,6 +168,43 @@ async function durchlauf(browser, url, groesse) {
   await blau.context().close();
 }
 
+// Privates Spiel: Code erstellen, falscher Code, richtiger Code
+async function privatesSpiel(browser, url, groesse) {
+  const a = await neueSeite(browser, url, groesse, `${groesse.name}/Lena`);
+  const b = await neueSeite(browser, url, groesse, `${groesse.name}/Tom`);
+  for (const [seite, name] of [[a, 'Lena'], [b, 'Tom']]) {
+    await seite.fill('#name-eingabe', name);
+    await seite.click('#knopf-spielen');
+    await seite.waitForSelector('#ansicht-lobby:not([hidden])');
+  }
+
+  await a.click('#knopf-privat');
+  await a.waitForSelector('#privat-box:not([hidden])');
+  const code = (await a.textContent('#privat-code')).trim();
+  if (!/^[A-HJ-NP-Z2-9]{4}$/.test(code)) throw new Error(`Ungültiger Code angezeigt: ${code}`);
+  await foto(a, `${groesse.name}-2b-privat-warten`);
+  await pruefeBreite(a, 'Privat warten');
+
+  // Falscher Code (enthält 0) → Fehler im Browser, unbekannter Code → Fehler vom Server
+  await b.fill('#code-eingabe', 'AB0C');
+  await b.click('#knopf-beitreten');
+  await b.waitForSelector('#code-fehler:not([hidden])');
+  await b.fill('#code-eingabe', code === 'ZZZZ' ? 'YYYY' : 'ZZZZ');
+  await b.click('#knopf-beitreten');
+  await b.waitForFunction(() => /Kein offenes Spiel/.test(document.querySelector('#code-fehler').textContent));
+  await foto(b, `${groesse.name}-1c-lobby-codefehler`);
+
+  await b.fill('#code-eingabe', code.toLowerCase());
+  await b.click('#knopf-beitreten');
+  await warteAufSpielstart(a);
+  await warteAufSpielstart(b);
+  for (const seite of [a, b]) {
+    if (await seite.isHidden('#privat-abzeichen')) throw new Error('Abzeichen "Privat" fehlt');
+  }
+  await a.context().close();
+  await b.context().close();
+}
+
 async function main() {
   fs.mkdirSync(ORDNER, { recursive: true });
   const server = erstelleServer();
@@ -177,6 +214,7 @@ async function main() {
   try {
     for (const groesse of GROESSEN) {
       await durchlauf(browser, url, groesse);
+      await privatesSpiel(browser, url, groesse);
       console.log(`✓ ${groesse.name} (${groesse.width}×${groesse.height})`);
     }
     if (konsolenFehler.length) throw new Error(`Fehler in der Browser-Konsole:\n${konsolenFehler.join('\n')}`);

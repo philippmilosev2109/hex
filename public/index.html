@@ -69,7 +69,7 @@
               </span>
             </button>
 
-            <button id="knopf-privat" type="button" class="option" disabled>
+            <button id="knopf-privat" type="button" class="option">
               <span class="option-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
               </span>
@@ -89,8 +89,8 @@
                 <span class="code-zeile">
                   <input id="code-eingabe" name="code" type="text" maxlength="4" autocomplete="off"
                          autocapitalize="characters" spellcheck="false" placeholder="z. B. K7QX"
-                         aria-describedby="code-fehler" disabled>
-                  <button id="knopf-beitreten" type="submit" class="knopf knopf-blau" disabled>Beitreten</button>
+                         aria-describedby="code-fehler">
+                  <button id="knopf-beitreten" type="submit" class="knopf knopf-blau">Beitreten</button>
                 </span>
                 <span id="code-fehler" class="feld-fehler" hidden></span>
               </span>
@@ -109,7 +109,15 @@
           <span></span><span></span><span></span><span></span><span></span><span></span>
         </div>
         <h1 id="warten-titel" tabindex="-1" data-fokus>Warte auf Gegner …</h1>
-        <p class="untertitel">Sobald sich ein zweiter Spieler anmeldet, startet das Spiel automatisch.</p>
+        <p id="warten-text" class="untertitel">Sobald sich ein zweiter Spieler anmeldet, startet das Spiel automatisch.</p>
+
+        <!-- Nur bei privaten Spielen: Code zum Weitergeben -->
+        <div id="privat-box" class="privat-box" hidden>
+          <p class="privat-label" id="privat-label">Dein Spielcode</p>
+          <p id="privat-code" class="privat-code" aria-labelledby="privat-label privat-code"></p>
+          <button id="knopf-kopieren" type="button" class="knopf knopf-sekundaer knopf-klein">Code kopieren</button>
+        </div>
+
         <p class="pille">Angemeldet als <strong id="warten-name"></strong></p>
         <button id="knopf-abbrechen" type="button" class="knopf knopf-sekundaer">Abbrechen</button>
       </div>
@@ -143,7 +151,10 @@
         </div>
 
         <aside class="panel" aria-label="Spielinformationen">
-          <h1 id="spiel-titel" class="panel-titel" tabindex="-1" data-fokus>Spiel #<span id="spiel-id"></span></h1>
+          <div class="panel-kopf">
+            <h1 id="spiel-titel" class="panel-titel" tabindex="-1" data-fokus>Spiel #<span id="spiel-id"></span></h1>
+            <span id="privat-abzeichen" class="abzeichen" hidden>Privat</span>
+          </div>
           <ul class="spielerliste">
             <li id="spieler-red" class="spieler">
               <span class="farb-hex farb-hex-red" aria-hidden="true">↕</span>

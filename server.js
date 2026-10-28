@@ -15,11 +15,21 @@ const { HexSpiel } = require('./game');
 
 const NAME_MAX = 20;
 
+// Codes für private Spiele: gut lesbar, darum ohne 0/O und 1/I
+const CODE_ZEICHEN = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const CODE_LAENGE = 4;
+
 // Die möglichen Zustände eines angemeldeten Spielers.
 // Jeder Spieler ist immer in genau einem davon.
-const IDLE = 'idle';             // angemeldet, macht gerade nichts
-const WARTEND = 'wartend';       // in der Warteschlange
+const IDLE = 'idle';             // angemeldet, macht gerade nichts (Lobby)
+const WARTEND = 'wartend';       // in der Warteschlange oder im eigenen privaten Raum
 const IM_SPIEL = 'imSpiel';      // spielt gerade
+
+// Zeiten lassen sich per Umgebungsvariable ändern (z. B. kürzer im Lasttest)
+function zahlAusUmgebung(name, standard) {
+  const wert = Number(process.env[name]);
+  return Number.isFinite(wert) && wert > 0 ? wert : standard;
+}
 
 // Erstellt einen kompletten Hex-Server (noch ohne zu starten).
 // Die Tests erzeugen damit eigene Server mit kurzen Zeiten.
@@ -27,6 +37,7 @@ function erstelleServer(optionen = {}) {
   const einstellungen = {
     maxEventsProSekunde: 20,     // Rate-Limit pro Socket
     lobbyVerzoegerungMs: 100,    // Lobby-Updates werden kurz gesammelt
+    privatAblaufMs: zahlAusUmgebung('HEX_PRIVAT_MS', 10 * 60 * 1000), // Code gilt 10 Minuten
     ...optionen,
   };
 
@@ -41,6 +52,7 @@ function erstelleServer(optionen = {}) {
   const spielerListe = new Map();  // Spieler-ID → Spieler
   const warteschlange = [];        // FIFO: wer zuerst kommt, spielt zuerst
   const partien = new Map();       // Spiel-ID → Partie
+  const privateRaeume = new Map(); // Code → { code, ersteller, timer }
   const aktiveTimer = new Set();   // alle laufenden setTimeout (zur Kontrolle)
   let naechsteSpielId = 1;
   let fehlerAnzahl = 0;
@@ -134,12 +146,13 @@ function erstelleServer(optionen = {}) {
   }
 
   // Zwei Spieler in eine neue Partie setzen. Farben werden zufällig verteilt.
-  function starteSpiel(a, b) {
+  function starteSpiel(a, b, { privat = false } = {}) {
     const [rot, blau] = Math.random() < 0.5 ? [a, b] : [b, a];
     const id = naechsteSpielId++;
     const partie = {
       id,
       raum: `spiel-${id}`,          // eigener Socket.io-Raum pro Spiel
+      privat,                       // private Spiele tauchen nirgends öffentlich auf
       spiel: new HexSpiel(),
       spieler: { red: rot, blue: blau },
     };
@@ -158,6 +171,7 @@ function erstelleServer(optionen = {}) {
         you: sp.name,
         opponent: gegner.name,
         players: namenVon(partie),
+        private: privat,
       });
     }
     sendeZustand(partie);
@@ -202,11 +216,59 @@ function erstelleServer(optionen = {}) {
     if (index !== -1) warteschlange.splice(index, 1);
   }
 
+  // ---------- Private Spiele ----------
+
+  // Zufälliger, noch nicht vergebener Code (32^4 ≈ 1 Million Möglichkeiten)
+  function neuerCode() {
+    let code;
+    do {
+      code = '';
+      for (let i = 0; i < CODE_LAENGE; i++) code += CODE_ZEICHEN[crypto.randomInt(CODE_ZEICHEN.length)];
+    } while (privateRaeume.has(code));
+    return code;
+  }
+
+  // Code aus der Eingabe säubern: Leerzeichen weg, Großbuchstaben. Ungültig → null.
+  function pruefeCode(code) {
+    if (typeof code !== 'string' || code.length > 20) return null;
+    const sauber = code.replace(/\s/g, '').toUpperCase();
+    if (sauber.length !== CODE_LAENGE) return null;
+    if (![...sauber].every(zeichen => CODE_ZEICHEN.includes(zeichen))) return null;
+    return sauber;
+  }
+
+  // Privaten Raum öffnen: Der Ersteller wartet, bis jemand mit dem Code beitritt.
+  // Nach einiger Zeit läuft der Code ab.
+  function erstellePrivatRaum(sp) {
+    const code = neuerCode();
+    const raum = { code, ersteller: sp, timer: null };
+    raum.timer = starteTimer(einstellungen.privatAblaufMs, 'privat-ablauf', () => {
+      if (privateRaeume.get(code) !== raum) return;
+      schliessePrivatRaum(sp);
+      sp.zustand = IDLE;
+      if (sp.socket) sp.socket.emit('privateExpired');
+    });
+    privateRaeume.set(code, raum);
+    sp.zustand = WARTEND;
+    sp.privatCode = code;
+    sp.socket.emit('waiting', { mode: 'private', code, expiresInMs: einstellungen.privatAblaufMs });
+  }
+
+  function schliessePrivatRaum(sp) {
+    const raum = privateRaeume.get(sp.privatCode);
+    if (raum && raum.ersteller === sp) {
+      stoppeTimer(raum.timer);
+      privateRaeume.delete(raum.code);
+    }
+    sp.privatCode = null;
+  }
+
   // Beendet, was der Spieler gerade tut (warten / spielen) → danach IDLE.
   // grund: 'resign' (aufgegeben) oder 'disconnect' (Verbindung weg / abgemeldet)
   function verlasseAktivitaet(sp, grund) {
     if (sp.zustand === WARTEND) {
-      entferneAusWarteschlange(sp);
+      if (sp.privatCode) schliessePrivatRaum(sp);
+      else entferneAusWarteschlange(sp);
     } else if (sp.zustand === IM_SPIEL) {
       const partie = sp.partie;
       partie.spiel.beendeDurch(sp.farbe, grund, Date.now());
@@ -250,6 +312,7 @@ function erstelleServer(optionen = {}) {
         zustand: IDLE,
         partie: null,
         farbe: null,
+        privatCode: null,     // Code des eigenen privaten Raums (nur beim Warten)
       };
       spielerListe.set(sp.id, sp);
       socket.data.spieler = sp;
@@ -266,7 +329,34 @@ function erstelleServer(optionen = {}) {
       stelleInWarteschlange(sp);
     });
 
-    // Warten abbrechen
+    // Privates Spiel erstellen → Code bekommen und warten
+    an('createPrivate', () => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IDLE) return;
+      erstellePrivatRaum(sp);
+    });
+
+    // Privatem Spiel beitreten: { code }
+    an('joinPrivate', daten => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IDLE) return;
+      const code = pruefeCode(istObjekt(daten) ? daten.code : undefined);
+      if (!code) {
+        socket.emit('privateError', { reason: 'Ein Code besteht aus 4 Zeichen (Buchstaben A–Z ohne I/O, Ziffern 2–9).' });
+        return;
+      }
+      const raum = privateRaeume.get(code);
+      if (!raum) {
+        socket.emit('privateError', { reason: 'Kein offenes Spiel mit diesem Code – er ist ungültig, abgelaufen oder schon vergeben.' });
+        return;
+      }
+      // Code ist nur einmal gültig: Raum schließen und sofort spielen
+      const ersteller = raum.ersteller;
+      schliessePrivatRaum(ersteller);
+      starteSpiel(ersteller, sp, { privat: true });
+    });
+
+    // Warten abbrechen (Warteschlange oder eigener privater Raum)
     an('cancel', () => {
       const sp = spieler();
       if (!sp || sp.zustand !== WARTEND) return;
@@ -350,6 +440,7 @@ function erstelleServer(optionen = {}) {
       spieler: spielerListe.size,
       warteschlange: warteschlange.length,
       partien: partien.size,
+      privateRaeume: privateRaeume.size,
       raeume: spielRaeume.length,
       timer: aktiveTimer.size,
       fehler: fehlerAnzahl,
