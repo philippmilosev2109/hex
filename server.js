@@ -34,6 +34,8 @@ const IM_SPIEL = 'imSpiel';      // spielt gerade
 const ZUSCHAUEND = 'zuschauend'; // schaut einem öffentlichen Spiel zu
 
 const LOBBY_LISTE_MAX = 20;      // so viele laufende Spiele zeigt die Lobby höchstens
+const RANGLISTE_TOP = 10;        // so viele Plätze zeigt die Rangliste
+const RANGLISTE_MAX = 1000;      // so viele Namen merkt sich der Server höchstens
 
 // Zeiten lassen sich per Umgebungsvariable ändern (z. B. kürzer im Lasttest)
 function zahlAusUmgebung(name, standard) {
@@ -65,6 +67,7 @@ function erstelleServer(optionen = {}) {
   const warteschlange = [];        // FIFO: wer zuerst kommt, spielt zuerst
   const partien = new Map();       // Spiel-ID → Partie
   const privateRaeume = new Map(); // Code → { code, ersteller, timer }
+  const rangliste = new Map();     // Name (klein geschrieben) → { name, siege, niederlagen }
   const aktiveTimer = new Set();   // alle laufenden setTimeout (zur Kontrolle)
   let naechsteSpielId = 1;
   let fehlerAnzahl = 0;
@@ -133,7 +136,45 @@ function erstelleServer(optionen = {}) {
         moves: partie.spiel.zuege.length,
         spectators: partie.zuschauer.size,
       }));
-    return { online: spielerListe.size, games: partien.size, list: oeffentlich };
+    return { online: spielerListe.size, games: partien.size, list: oeffentlich, leaderboard: bestenliste() };
+  }
+
+  // ---------- Rangliste (nur im Speicher, seit Serverstart) ----------
+
+  // Sieg bzw. Niederlage für einen Namen eintragen. "Milo" und "milo" zählen zusammen.
+  function zaehleErgebnis(name, gewonnen) {
+    const schluessel = name.toLowerCase();
+    let eintrag = rangliste.get(schluessel);
+    if (!eintrag) {
+      if (rangliste.size >= RANGLISTE_MAX) entferneSchwaechstenEintrag();
+      eintrag = { name, siege: 0, niederlagen: 0 };
+      rangliste.set(schluessel, eintrag);
+    }
+    eintrag.name = name;           // zuletzt benutzte Schreibweise anzeigen
+    if (gewonnen) eintrag.siege++;
+    else eintrag.niederlagen++;
+  }
+
+  // Speicher begrenzen: Den Eintrag mit den wenigsten Partien vergessen
+  function entferneSchwaechstenEintrag() {
+    let schwaechster = null;
+    for (const [schluessel, e] of rangliste) {
+      if (!schwaechster || e.siege + e.niederlagen < schwaechster.partien) {
+        schwaechster = { schluessel, partien: e.siege + e.niederlagen };
+      }
+    }
+    if (schwaechster) rangliste.delete(schwaechster.schluessel);
+  }
+
+  // Sortiert: meiste Siege, dann wenigste Niederlagen, dann Name
+  function sortierteRangliste() {
+    return [...rangliste.values()]
+      .sort((a, b) => b.siege - a.siege || a.niederlagen - b.niederlagen || a.name.localeCompare(b.name, 'de'))
+      .map(e => ({ name: e.name, wins: e.siege, losses: e.niederlagen }));
+  }
+
+  function bestenliste() {
+    return sortierteRangliste().slice(0, RANGLISTE_TOP);
   }
 
   // Lobby-Update an alle Angemeldeten (Raum "lobby"). Viele Änderungen kurz
@@ -246,6 +287,10 @@ function erstelleServer(optionen = {}) {
     const spiel = partie.spiel;
     stoppeTimer(partie.uhrTimer);
     partie.uhrTimer = null;
+    // Rangliste: Jedes beendete Spiel hat genau einen Sieger und einen Verlierer
+    const verlierer = spiel.gewinner === 'red' ? 'blue' : 'red';
+    zaehleErgebnis(partie.spieler[spiel.gewinner].name, true);
+    zaehleErgebnis(partie.spieler[verlierer].name, false);
     io.to(partie.raum).emit('gameOver', {
       winner: spiel.gewinner,
       reason: spiel.grund,
@@ -740,7 +785,7 @@ function erstelleServer(optionen = {}) {
     };
   }
 
-  return { app, httpServer, io, starte, stoppe, diagnose };
+  return { app, httpServer, io, starte, stoppe, diagnose, rangliste: sortierteRangliste };
 }
 
 // Alle IPv4-Adressen dieses Rechners im lokalen Netz (für Mitspieler)

@@ -574,6 +574,59 @@ describe('Zuschauen', () => {
   });
 });
 
+describe('Rangliste', () => {
+  async function spielMitAufgabe(gewinnerName, verliererName) {
+    const sieger = await anmelden(gewinnerName);
+    const verlierer = await anmelden(verliererName);
+    sieger.emit('queue');
+    await sieger.warteAuf('waiting');
+    verlierer.emit('queue');
+    await Promise.all([sieger.warteAuf('gameStart'), verlierer.warteAuf('gameStart')]);
+    verlierer.emit('resign');
+    await Promise.all([sieger.warteAuf('gameOver'), verlierer.warteAuf('gameOver')]);
+    sieger.emit('logout');
+    verlierer.emit('logout');
+    await Promise.all([sieger.warteAuf('loggedOut'), verlierer.warteAuf('loggedOut')]);
+  }
+
+  test('Siege und Niederlagen werden gezählt und live in der Lobby gezeigt', async () => {
+    const beobachter = await anmelden('Zoe');
+    await spielMitAufgabe('Milo', 'Nico');
+    const lobby = await warteAufLobby(beobachter, l => l.leaderboard.length === 2);
+    expect(lobby.leaderboard).toEqual([
+      { name: 'Milo', wins: 1, losses: 0 },
+      { name: 'Nico', wins: 0, losses: 1 },
+    ]);
+  });
+
+  test('Groß-/Kleinschreibung zählt zusammen, Sortierung nach Siegen und Niederlagen', async () => {
+    await spielMitAufgabe('Milo', 'Nico');
+    await spielMitAufgabe('milo', 'Nico');
+    await spielMitAufgabe('Ada', 'Bo');
+    await spielMitAufgabe('Ada', 'Bo');
+    await spielMitAufgabe('Bo', 'Nico');
+    expect(server.rangliste()).toEqual([
+      { name: 'Ada', wins: 2, losses: 0 },
+      { name: 'milo', wins: 2, losses: 0 },
+      { name: 'Bo', wins: 1, losses: 2 },
+      { name: 'Nico', wins: 0, losses: 3 },
+    ]);
+  });
+
+  test('auch Verlassen und Zeitablauf zählen; höchstens 10 Plätze in der Lobby', async () => {
+    const { rot, blau } = await spielStarten('Rita', 'Udo');
+    blau.trennen();
+    await rot.warteAuf('gameOver');
+    expect(server.rangliste().map(e => e.name).sort()).toEqual(['Rita', 'Udo']);
+
+    for (let i = 0; i < 6; i++) await spielMitAufgabe(`S${i}`, `V${i}`);
+    const beobachter = await anmelden('Zoe');
+    const lobby = await beobachter.warteAuf('lobby');
+    expect(lobby.leaderboard).toHaveLength(10);
+    expect(server.rangliste()).toHaveLength(14);
+  }, 15000);
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();

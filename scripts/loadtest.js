@@ -459,6 +459,14 @@ async function main() {
   for (const k of Object.keys(leer)) {
     if (diagnose[k] !== 0) fehler(`Nach dem Test nicht leer: ${k} = ${diagnose[k]}`);
   }
+  // Rangliste: Jedes Spiel hat genau einen Sieger und einen Verlierer
+  const rangliste = server.rangliste();
+  const siege = rangliste.reduce((summe, e) => summe + e.wins, 0);
+  const niederlagen = rangliste.reduce((summe, e) => summe + e.losses, 0);
+  if (siege !== niederlagen || siege !== statistik.spieleGestartet) {
+    fehler(`Rangliste passt nicht: ${siege} Siege, ${niederlagen} Niederlagen, ${statistik.spieleGestartet} Spiele`);
+  }
+
   if (diagnose.fehler > 0 || serverFehlerAusgaben > 0) {
     fehler(`Server-Fehler: ${diagnose.fehler} in Handlern, ${serverFehlerAusgaben} Fehlerausgaben`);
   }
@@ -483,7 +491,7 @@ async function main() {
   console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}, Revanchen: ${statistik.revanchen}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log(`Chat: ${statistik.chatEmpfangen} Nachrichten zugestellt, ${statistik.chatAbgelehnt} abgelehnt, ${statistik.reaktionen} Reaktionen`);
-  console.log(`Zuschauen: ${statistik.zuschauSitzungen} Sitzungen`);
+  console.log(`Zuschauen: ${statistik.zuschauSitzungen} Sitzungen, Rangliste: ${rangliste.length} Namen, ${siege} Siege = ${niederlagen} Niederlagen`);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
   console.log('Server-Zustand am Ende:', diagnose);

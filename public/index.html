@@ -112,6 +112,23 @@
             <ul id="spiele-liste" class="spiele-liste"></ul>
             <p id="spiele-leer" class="leer-hinweis">Gerade läuft kein öffentliches Spiel.</p>
           </section>
+
+          <section class="karte karte-kompakt" aria-labelledby="rangliste-titel">
+            <h2 id="rangliste-titel" class="abschnitt-titel">Rangliste seit Serverstart</h2>
+            <table class="rangliste" aria-labelledby="rangliste-titel">
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Name</th>
+                  <th scope="col" class="zahl"><span aria-hidden="true">S</span><span class="nur-screenreader">Siege</span></th>
+                  <th scope="col" class="zahl"><span aria-hidden="true">N</span><span class="nur-screenreader">Niederlagen</span></th>
+                </tr>
+              </thead>
+              <tbody id="rangliste-zeilen"></tbody>
+            </table>
+            <p id="rangliste-leer" class="leer-hinweis">Noch keine Partie beendet.</p>
+            <p class="rangliste-hinweis">S = Siege, N = Niederlagen. Wird beim Neustart des Servers zurückgesetzt.</p>
+          </section>
         </aside>
       </div>
     </section>

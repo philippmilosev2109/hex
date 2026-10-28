@@ -126,7 +126,28 @@ socket.on('lobby', daten => {
   $('#lobby-online').textContent = `${mehrzahl(daten.online, 'Spieler', 'Spieler')} online`;
   $('#lobby-spiele').textContent = mehrzahl(daten.games, 'laufendes Spiel', 'laufende Spiele');
   zeigeSpieleliste(daten.list || []);
+  zeigeRangliste(daten.leaderboard || []);
 });
+
+// Rangliste (Top 10): Platz, Name, Siege, Niederlagen – der eigene Name ist hervorgehoben
+function zeigeRangliste(liste) {
+  const zeilen = liste.map((eintrag, i) => {
+    const zeile = document.createElement('tr');
+    if (app.name && eintrag.name.toLowerCase() === app.name.toLowerCase()) zeile.className = 'ich';
+    const zellen = [String(i + 1), eintrag.name, String(eintrag.wins), String(eintrag.losses)];
+    zellen.forEach((inhalt, spalte) => {
+      const zelle = document.createElement('td');
+      zelle.textContent = inhalt;
+      if (spalte === 1) zelle.className = 'rangliste-name';
+      if (spalte >= 2) zelle.className = 'zahl';
+      zeile.appendChild(zelle);
+    });
+    return zeile;
+  });
+  $('#rangliste-zeilen').replaceChildren(...zeilen);
+  $('#rangliste-leer').hidden = liste.length > 0;
+  document.querySelector('.rangliste').hidden = liste.length === 0;
+}
 
 // Ein Eintrag pro öffentlichem Spiel: "Milo vs. Nico · Zug 14" + Knopf "Zuschauen"
 function zeigeSpieleliste(liste) {

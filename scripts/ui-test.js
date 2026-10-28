@@ -167,11 +167,14 @@ async function durchlauf(browser, url, groesse) {
   await foto(blau, `${groesse.name}-4-spielende-verlierer`);
   await pruefeBreite(rot, 'Spielende');
 
-  // Zuschauer sieht das Spielende und kehrt zur Lobby zurück
+  // Zuschauer sieht das Spielende und kehrt zur Lobby zurück – dort steht der Sieger in der Rangliste
   await z.waitForSelector('#spielende:not([hidden])');
   await foto(z, `${groesse.name}-5b-zuschauer-ende`);
   await z.click('#knopf-zuschauer-lobby');
   await z.waitForSelector('#ansicht-lobby:not([hidden])');
+  await z.waitForSelector('#rangliste-zeilen tr');
+  await foto(z, `${groesse.name}-1e-lobby-rangliste`);
+  await pruefeBreite(z, 'Lobby mit Rangliste');
   await z.context().close();
 
   // 5. Revanche: Rot fragt, Blau sieht das Angebot und nimmt an → Farben getauscht
