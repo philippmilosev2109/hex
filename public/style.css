@@ -1356,7 +1356,11 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
   }
-  .brett svg { max-height: none; }
+  /* Brett nie höher als das Fenster (wichtig für Handys im Querformat) */
+  .brett svg {
+    max-height: calc(100vh - var(--kopf-hoehe) - 16px);
+    max-height: calc(100dvh - var(--kopf-hoehe) - 16px);
+  }
   .panel { padding: 18px; }
   main { align-items: flex-start; }
   /* Das Brett ist hier zu klein für die Karte → Spielende über den ganzen Bildschirm */

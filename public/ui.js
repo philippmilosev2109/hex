@@ -6,6 +6,9 @@ export const $ = selektor => document.querySelector(selektor);
 // Zeigt genau eine Ansicht (login, warten, spiel) und versteckt die anderen.
 // Der Fokus springt auf die Überschrift – wichtig für Tastatur und Screenreader.
 export function zeigeAnsicht(name) {
+  const neu = document.querySelector(`#ansicht-${name}`);
+  // Neue Ansicht beginnt oben (sonst bleibt z. B. die Lobby-Scrollposition stehen)
+  if (neu && neu.hidden) window.scrollTo(0, 0);
   for (const ansicht of document.querySelectorAll('.ansicht')) {
     ansicht.hidden = ansicht.id !== `ansicht-${name}`;
   }
