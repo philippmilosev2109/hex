@@ -14,6 +14,7 @@ const { erstelleServer } = require('../server');
 const ORDNER = path.join(__dirname, '..', 'screenshots');
 const GROESSEN = [
   { name: 'desktop', width: 1280, height: 800 },
+  { name: 'klein', width: 1024, height: 768 },
   { name: 'handy', width: 375, height: 812 },
 ];
 
@@ -148,8 +149,22 @@ async function durchlauf(browser, url, groesse) {
   if (await z.isVisible('#knopf-aufgeben')) throw new Error('Zuschauer sieht "Aufgeben"');
   await foto(z, `${groesse.name}-5-zuschauer`);
 
+  // Tastatur: Rot wählt mit den Pfeiltasten A5 (Zeile 4, Spalte 0) und setzt mit Enter
+  await rot.focus('#brett svg');
+  await rot.keyboard.press('ArrowUp');
+  for (let i = 0; i < 5; i++) await rot.keyboard.press('ArrowLeft');
+  const ansage = await rot.textContent('#brett-ansage');
+  if (!ansage.startsWith('A5: frei')) throw new Error(`Falsche Tastatur-Ansage: ${ansage}`);
+  if (groesse.name === 'desktop') await foto(rot, `${groesse.name}-3e-tastatur`);
+  await rot.keyboard.press('Enter');
+  steine++;
+  for (const seite of [rot, blau]) {
+    await seite.waitForSelector('.stein.red[data-r="4"][data-c="0"]');
+  }
+  await zug(blau, rot, 4, 5, ++steine);
+
   // Rot spielt die Spalte 0 zu Ende → Sieg
-  for (let r = 4; r < 11; r++) {
+  for (let r = 5; r < 11; r++) {
     await zug(rot, blau, r, 0, ++steine);
     if (r < 10) await zug(blau, rot, r, 5, ++steine);
   }

@@ -115,6 +115,50 @@ export class Brett {
       this.zeigeVorschau(Number(feld.dataset.r), Number(feld.dataset.c), this.eigeneFarbe);
     });
     this.svg.addEventListener('pointerleave', () => this.versteckeVorschau());
+
+    // Tastatur: Pfeiltasten bewegen einen Rahmen über die Felder, Enter/Leertaste setzt
+    this.cursor = { row: 5, col: 5 };   // Start in der Mitte (F6)
+    this.ansage = document.getElementById('brett-ansage');
+    this.svg.addEventListener('keydown', event => this.taste(event));
+    this.svg.addEventListener('focus', () => this.zeigeCursor());
+    this.svg.addEventListener('blur', () => {
+      this.cursorElement.style.display = 'none';
+      this.versteckeVorschau();
+    });
+  }
+
+  taste(event) {
+    const schritte = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] };
+    const schritt = schritte[event.key];
+    if (schritt) {
+      event.preventDefault();
+      this.cursor.row = Math.min(GROESSE - 1, Math.max(0, this.cursor.row + schritt[0]));
+      this.cursor.col = Math.min(GROESSE - 1, Math.max(0, this.cursor.col + schritt[1]));
+      this.zeigeCursor();
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      const { row, col } = this.cursor;
+      if (!this.aktiv) this.sage('Du bist gerade nicht am Zug.');
+      else if (this.steine[row][col]) this.sage(`${koordinate(row, col)} ist schon belegt.`);
+      else this.onFeldKlick(row, col);
+    }
+  }
+
+  // Rahmen um das gewählte Feld zeichnen und das Feld ansagen
+  zeigeCursor() {
+    const { row, col } = this.cursor;
+    const m = mittelpunkt(row, col);
+    this.cursorElement.setAttribute('points', alsPunktString(ecken(m.x, m.y)));
+    this.cursorElement.style.display = '';
+    const stein = this.steine[row][col];
+    if (this.aktiv && !stein) this.zeigeVorschau(row, col, this.eigeneFarbe);
+    else this.versteckeVorschau();
+    const belegung = stein ? (stein.dataset.farbe === 'red' ? 'roter Stein' : 'blauer Stein') : 'frei';
+    this.sage(`${koordinate(row, col)}: ${belegung}`);
+  }
+
+  sage(text) {
+    if (this.ansage) this.ansage.textContent = text;
   }
 
   zeichne() {
@@ -126,8 +170,11 @@ export class Brett {
     this.viewBoxKompakt = `${weg} ${weg} ${(breite - 2 * weg).toFixed(1)} ${(hoehe - 2 * weg).toFixed(1)}`;
     const svg = svgElement('svg', {
       viewBox: this.viewBoxNormal,
-      role: 'img',
+      role: 'application',
+      tabindex: '0',
+      'aria-roledescription': 'Spielbrett',
       'aria-label': 'Spielbrett mit 11 mal 11 Feldern. Rot verbindet oben und unten, Blau links und rechts.',
+      'aria-describedby': 'brett-hilfe',
     });
 
     const defs = svgElement('defs');
@@ -141,6 +188,8 @@ export class Brett {
     this.steinGruppe = svgElement('g', { class: 'steine' });
     this.markierung = svgElement('circle', { r: (STEIN_RADIUS + 3.5).toFixed(1), class: 'letzter-zug' });
     this.markierung.style.display = 'none';
+    this.cursorElement = svgElement('polygon', { class: 'tastatur-cursor' });   // Tastatur-Rahmen
+    this.cursorElement.style.display = 'none';
 
     for (let r = 0; r < GROESSE; r++) {
       this.felder.push([]);
@@ -188,7 +237,7 @@ export class Brett {
       );
     }
 
-    svg.append(felderGruppe, raender, koordinaten, this.pfadGruppe, this.steinGruppe, this.markierung);
+    svg.append(felderGruppe, raender, koordinaten, this.pfadGruppe, this.steinGruppe, this.markierung, this.cursorElement);
     return svg;
   }
 

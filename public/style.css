@@ -645,7 +645,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
    ========================================================== */
 .spiel-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 28vw, 340px);
   gap: 28px;
   align-items: center;
   width: 100%;
@@ -731,6 +731,18 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   to   { opacity: 1; transform: none; }
 }
 
+/* Tastatur: Fokus auf dem ganzen Brett und Rahmen um das gewählte Feld */
+.brett svg:focus { outline: none; }
+.brett svg:focus-visible .felder { filter: drop-shadow(0 0 3px var(--fokus)); }
+
+.tastatur-cursor {
+  fill: none;
+  stroke: var(--fokus);
+  stroke-width: 3.5;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
 /* Ring um den zuletzt gesetzten Stein */
 .letzter-zug {
   fill: none;
@@ -802,8 +814,8 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px;
+  gap: 12px;
+  padding: 20px;
   background: linear-gradient(180deg, var(--flaeche-oben), var(--flaeche));
   border: 1px solid var(--rahmen);
   border-radius: var(--radius);
@@ -867,7 +879,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border: 1px solid transparent;
   border-radius: 12px;
   transition: background-color 0.2s, border-color 0.2s;
@@ -938,7 +950,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 14px 16px;
+  padding: 12px 16px;
   background: var(--flaeche-tief);
   border: 2px solid var(--rahmen);
   border-radius: 12px;
@@ -1028,7 +1040,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   align-content: start;
   gap: 4px;
   min-height: 84px;
-  max-height: 132px;
+  max-height: 120px;
   margin: 0;
   padding: 8px 10px;
   overflow-y: auto;
@@ -1126,7 +1138,7 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2px 12px;
-  max-height: 132px;
+  max-height: 120px;
   margin: 0;
   padding: 8px 10px;
   overflow-y: auto;
@@ -1321,6 +1333,15 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
 /* ==========================================================
    9. Kleinere Bildschirme
    ========================================================== */
+/* Breite Bildschirme: Das Panel ist nie höher als das Fenster (sonst scrollt es innen) */
+@media (min-width: 901px) {
+  .panel {
+    max-height: calc(100vh - var(--kopf-hoehe) - 32px);
+    max-height: calc(100dvh - var(--kopf-hoehe) - 32px);
+    overflow-y: auto;
+  }
+}
+
 /* Lobby: Liste der laufenden Spiele rutscht unter die Optionen */
 @media (max-width: 860px) {
   .lobby {

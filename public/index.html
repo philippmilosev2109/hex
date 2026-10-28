@@ -159,6 +159,9 @@
       <div class="spiel-layout">
         <div class="brett-bereich">
           <div id="brett" class="brett"></div>
+          <!-- Tastatur: Hilfe und Ansage des gewählten Feldes (nur für Screenreader sichtbar) -->
+          <p id="brett-hilfe" class="nur-screenreader">Mit den Pfeiltasten ein Feld wählen, mit Enter oder Leertaste den Stein setzen.</p>
+          <p id="brett-ansage" class="nur-screenreader" aria-live="polite"></p>
           <!-- Hier steigen die Schnell-Reaktionen auf -->
           <div id="reaktion-buehne" class="reaktion-buehne" aria-hidden="true"></div>
 
@@ -211,7 +214,7 @@
               <span class="farb-hex farb-hex-red" aria-hidden="true">↕</span>
               <span class="spieler-text">
                 <span class="spieler-name"></span> <span class="du">(du)</span>
-                <span class="spieler-farbe">Rot · oben und unten</span>
+                <span class="spieler-farbe">Rot · oben–unten</span>
               </span>
               <span id="uhr-red" class="uhr" role="timer" aria-label="Restzeit Rot">3:00</span>
             </li>
@@ -219,7 +222,7 @@
               <span class="farb-hex farb-hex-blue" aria-hidden="true">↔</span>
               <span class="spieler-text">
                 <span class="spieler-name"></span> <span class="du">(du)</span>
-                <span class="spieler-farbe">Blau · links und rechts</span>
+                <span class="spieler-farbe">Blau · links–rechts</span>
               </span>
               <span id="uhr-blue" class="uhr" role="timer" aria-label="Restzeit Blau">3:00</span>
             </li>
@@ -235,9 +238,8 @@
               Tauschen
             </button>
             <p id="tausch-info" class="tausch-info">
-              <strong>Swap-Regel:</strong> Statt selbst zu setzen, darfst du den ersten roten Stein
-              übernehmen – gespiegelt an der langen Diagonale und in Blau. Danach ist Rot wieder dran.
-              Das gleicht den Vorteil des ersten Zugs aus.
+              <strong>Swap-Regel:</strong> Statt zu setzen, darfst du Rots ersten Stein übernehmen –
+              gespiegelt und in Blau. Das gleicht den Vorteil des ersten Zugs aus.
             </p>
           </div>
           <p id="tausch-hinweis" class="tausch-hinweis" hidden>
