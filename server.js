@@ -154,9 +154,12 @@ function erstelleServer(optionen = {}) {
     return { red: partie.spieler.red.name, blue: partie.spieler.blue.name };
   }
 
-  // Zwei Spieler in eine neue Partie setzen. Farben werden zufällig verteilt.
-  function starteSpiel(a, b, { privat = false } = {}) {
-    const [rot, blau] = Math.random() < 0.5 ? [a, b] : [b, a];
+  // Zwei Spieler in eine neue Partie setzen. Farben werden zufällig verteilt,
+  // außer bei der Revanche (festeFarben: a spielt Rot, b spielt Blau).
+  function starteSpiel(a, b, { privat = false, festeFarben = false } = {}) {
+    const [rot, blau] = festeFarben || Math.random() < 0.5 ? [a, b] : [b, a];
+    beendeNachSpiel(a);   // alte Revanche-Angebote sind damit erledigt
+    beendeNachSpiel(b);
     const id = naechsteSpielId++;
     const partie = {
       id,
@@ -230,8 +233,55 @@ function erstelleServer(optionen = {}) {
       sp.farbe = null;
       if (sp.socket) sp.socket.leave(partie.raum);
     }
+    // Revanche vorbereiten: Beide merken sich den Gegner und ihre Farbe.
+    // Hat jemand das Spiel verlassen, gibt es keine Revanche.
+    if (spiel.grund !== 'disconnect') {
+      const { red: rot, blue: blau } = partie.spieler;
+      rot.nachSpiel = { gegner: blau, farbe: 'red', revanche: false, privat: partie.privat };
+      blau.nachSpiel = { gegner: rot, farbe: 'blue', revanche: false, privat: partie.privat };
+    }
     partien.delete(partie.id);
     lobbyAktualisieren();
+  }
+
+  // ---------- Revanche ----------
+
+  // Der Spieler verlässt den Spielende-Bildschirm (neues Spiel, Lobby, Abmelden …):
+  // Ein Revanche-Angebot ist damit hinfällig – der Gegner erfährt es sofort.
+  function beendeNachSpiel(sp) {
+    const nach = sp.nachSpiel;
+    if (!nach) return;
+    sp.nachSpiel = null;
+    const gegner = nach.gegner;
+    if (gegner.nachSpiel && gegner.nachSpiel.gegner === sp) {
+      gegner.nachSpiel = null;
+      if (gegner.socket) gegner.socket.emit('rematchCancelled', { reason: `${sp.name} ist nicht mehr da – keine Revanche möglich.` });
+    }
+  }
+
+  // Revanche wünschen. Wollen beide, startet sofort ein Spiel mit getauschten Farben.
+  function wuenscheRevanche(sp) {
+    const nach = sp.nachSpiel;
+    if (!nach || nach.revanche) return;           // kein Gegner oder schon gefragt
+    const gegner = nach.gegner;
+    const gegnerDa = gegner.nachSpiel && gegner.nachSpiel.gegner === sp &&
+                     gegner.zustand === IDLE && gegner.socket;
+    if (!gegnerDa) {
+      sp.nachSpiel = null;
+      sp.socket.emit('rematchCancelled', { reason: 'Dein Gegner ist nicht mehr da – keine Revanche möglich.' });
+      return;
+    }
+    if (gegner.nachSpiel.revanche) {
+      // Wer zuletzt Rot war, spielt jetzt Blau – und umgekehrt
+      const [rot, blau] = nach.farbe === 'red' ? [gegner, sp] : [sp, gegner];
+      sp.nachSpiel = null;
+      gegner.nachSpiel = null;
+      starteSpiel(rot, blau, { privat: nach.privat, festeFarben: true });
+      return;
+    }
+    nach.revanche = true;
+    gegner.socket.emit('rematchOffered', { from: sp.name });
+    sp.socket.emit('rematchWaiting', { opponent: gegner.name });
   }
 
   // Warteschlange: Sobald zwei Spieler warten, startet ein Spiel.
@@ -348,6 +398,7 @@ function erstelleServer(optionen = {}) {
         partie: null,
         farbe: null,
         privatCode: null,     // Code des eigenen privaten Raums (nur beim Warten)
+        nachSpiel: null,      // nach Spielende: { gegner, farbe, revanche, privat }
       };
       spielerListe.set(sp.id, sp);
       socket.data.spieler = sp;
@@ -357,10 +408,11 @@ function erstelleServer(optionen = {}) {
       lobbyAktualisieren();
     });
 
-    // In die Warteschlange ("Spielen" / "Nochmal spielen")
+    // In die Warteschlange ("Schnelles Spiel" / "Neuer Gegner")
     an('queue', () => {
       const sp = spieler();
       if (!sp || sp.zustand !== IDLE) return;
+      beendeNachSpiel(sp);
       stelleInWarteschlange(sp);
     });
 
@@ -368,7 +420,22 @@ function erstelleServer(optionen = {}) {
     an('createPrivate', () => {
       const sp = spieler();
       if (!sp || sp.zustand !== IDLE) return;
+      beendeNachSpiel(sp);
       erstellePrivatRaum(sp);
+    });
+
+    // Revanche: gleicher Gegner, Farben getauscht – erst wenn beide zustimmen
+    an('rematch', () => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IDLE) return;
+      wuenscheRevanche(sp);
+    });
+
+    // Spielende-Bildschirm verlassen ("Zur Lobby") → keine Revanche mehr
+    an('leaveGame', () => {
+      const sp = spieler();
+      if (!sp || sp.zustand !== IDLE) return;
+      beendeNachSpiel(sp);
     });
 
     // Privatem Spiel beitreten: { code }
@@ -447,6 +514,7 @@ function erstelleServer(optionen = {}) {
       const sp = spieler();
       if (!sp) return;
       verlasseAktivitaet(sp, 'disconnect');
+      beendeNachSpiel(sp);
       spielerListe.delete(sp.id);
       socket.data.spieler = null;
       socket.leave('lobby');
@@ -459,6 +527,7 @@ function erstelleServer(optionen = {}) {
       const sp = spieler();
       if (!sp) return;
       verlasseAktivitaet(sp, 'disconnect');
+      beendeNachSpiel(sp);
       sp.socket = null;
       spielerListe.delete(sp.id);
       lobbyAktualisieren();

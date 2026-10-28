@@ -25,6 +25,7 @@ const app = {
   endeTimer: null,     // zeigt die Spielende-Karte erst nach der Gewinnpfad-Animation
   zeitWarnung: false,  // Warnton "Zeit knapp" schon gespielt?
   tickSekunde: null,   // letzte Sekunde, in der das Ticken kam (unter 10 s)
+  revanche: 'offen',   // Revanche-Zustand nach Spielende (siehe zeigeRevanche)
 };
 
 const wenigerBewegung = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -448,6 +449,9 @@ socket.on('gameOver', ende => {
     sound.niederlage();
   }
 
+  // Revanche geht nur, wenn der Gegner noch da ist
+  zeigeRevanche(ende.reason === 'disconnect' ? 'unmoeglich' : 'offen');
+
   // Erst den Gewinnpfad wachsen lassen, dann die Karte einblenden
   const warten = ende.path && !wenigerBewegung() ? Math.min(pfadDauer + 500, 2200) : 0;
   clearTimeout(app.endeTimer);
@@ -499,11 +503,54 @@ $('#knopf-ergebnis').addEventListener('click', () => {
   $('#ende-titel').focus({ preventScroll: true });
 });
 
-// 5. Erneut spielen: zurück in die Warteschlange, in die Lobby oder abmelden
+// ---------- Revanche ----------
+// Zustände: 'offen' (Knopf aktiv), 'gefragt' (wir warten), 'angebot' (Gegner will),
+// 'unmoeglich' (Gegner weg). text: Statuszeile über den Knöpfen.
+
+function zeigeRevanche(zustand, text = '') {
+  app.revanche = zustand;
+  const knopf = $('#knopf-revanche');
+  knopf.disabled = zustand === 'gefragt' || zustand === 'unmoeglich';
+  knopf.textContent = {
+    offen: 'Revanche',
+    gefragt: 'Revanche angefragt …',
+    angebot: 'Revanche annehmen',
+    unmoeglich: 'Revanche nicht möglich',
+  }[zustand];
+  const status = $('#revanche-status');
+  status.textContent = text;
+  status.hidden = !text;
+  status.classList.toggle('angebot', zustand === 'angebot');
+}
+
+$('#knopf-revanche').addEventListener('click', () => {
+  if (app.revanche !== 'offen' && app.revanche !== 'angebot') return;
+  if (app.revanche === 'offen') zeigeRevanche('gefragt');
+  socket.emit('rematch');
+});
+
+socket.on('rematchWaiting', ({ opponent }) => {
+  zeigeRevanche('gefragt', `Warte auf ${opponent} …`);
+});
+
+socket.on('rematchOffered', ({ from }) => {
+  zeigeRevanche('angebot', `${from} möchte eine Revanche!`);
+  // Ist die Karte gerade ausgeblendet ("Brett ansehen"), zusätzlich ein Hinweis
+  if ($('#spielende').hidden) meldung(`${from} möchte eine Revanche!`);
+});
+
+socket.on('rematchCancelled', ({ reason }) => {
+  zeigeRevanche('unmoeglich', reason);
+});
+
+// 5. Erneut spielen: neuer Gegner (Warteschlange), Lobby oder abmelden
 $('#knopf-nochmal').addEventListener('click', () => {
   if (app.name) socket.emit('queue');
 });
-$('#knopf-zur-lobby').addEventListener('click', () => wechsleZu('lobby'));
+$('#knopf-zur-lobby').addEventListener('click', () => {
+  socket.emit('leaveGame');   // Revanche-Angebote sind damit erledigt
+  wechsleZu('lobby');
+});
 $('#knopf-abmelden').addEventListener('click', () => socket.emit('logout'));
 
 // ---------- Verbindung ----------
@@ -531,6 +578,7 @@ socket.on('connect', () => {
     clearInterval(uhrIntervall);
     aktualisiereStatus();
     setzeAufgebenZurueck();
+    zeigeRevanche('unmoeglich');
     zeigeEndeKarte('Verbindung unterbrochen', 'Das Spiel wurde wegen des Verbindungsabbruchs beendet.', '', null);
   }
 });

@@ -945,6 +945,20 @@ button.option:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 650;
 }
 
+/* Revanche: Angebot des Gegners, Warten oder Absage */
+.revanche-status {
+  margin: -6px 0 14px;
+  padding: 8px 12px;
+  background: var(--flaeche-tief);
+  border: 1px solid var(--rahmen-stark);
+  border-radius: 10px;
+  font-weight: 650;
+}
+.revanche-status.angebot {
+  border-color: var(--fokus);
+  animation: einblenden 0.3s ease-out both;
+}
+
 .text-knoepfe {
   display: flex;
   flex-wrap: wrap;

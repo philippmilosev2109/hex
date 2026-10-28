@@ -137,11 +137,16 @@ async function durchlauf(browser, url, groesse) {
   await foto(blau, `${groesse.name}-4-spielende-verlierer`);
   await pruefeBreite(rot, 'Spielende');
 
-  // 5. Nochmal spielen → beide landen wieder im Spiel
-  await rot.click('#knopf-nochmal');
-  await blau.click('#knopf-nochmal');
+  // 5. Revanche: Rot fragt, Blau sieht das Angebot und nimmt an → Farben getauscht
+  await rot.click('#knopf-revanche');
+  await rot.waitForFunction(() => /Warte auf/.test(document.querySelector('#revanche-status').textContent));
+  await blau.waitForFunction(() => /möchte eine Revanche/.test(document.querySelector('#revanche-status').textContent));
+  await foto(blau, `${groesse.name}-4c-revanche-angebot`);
+  await blau.click('#knopf-revanche');
   await warteAufSpielstart(rot);
   await warteAufSpielstart(blau);
+  const rotIstJetztBlau = await rot.evaluate(() => !document.querySelector('#spieler-blue .du').hidden);
+  if (!rotIstJetztBlau) throw new Error('Revanche: Farben wurden nicht getauscht');
 
   // Aufgeben (mit Sicherheitsabfrage) → Gegner sieht den Grund
   await rot.click('#knopf-aufgeben');

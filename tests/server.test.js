@@ -335,6 +335,86 @@ describe('Swap-Regel', () => {
   });
 });
 
+describe('Revanche', () => {
+  // Spiel starten und sofort durch Aufgabe beenden
+  async function beendetesSpiel() {
+    const spiel = await spielStarten('Anna', 'Ben');
+    spiel.rot.emit('resign');
+    await Promise.all([spiel.rot.warteAuf('gameOver'), spiel.blau.warteAuf('gameOver')]);
+    return spiel;
+  }
+
+  test('beide wollen Revanche → neues Spiel mit getauschten Farben', async () => {
+    const { rot, blau, startA } = await beendetesSpiel();
+    rot.emit('rematch');
+    expect(await rot.warteAuf('rematchWaiting')).toMatchObject({ opponent: expect.any(String) });
+    const angebot = await blau.warteAuf('rematchOffered');
+    expect(angebot.from).toBe(startA.color === 'red' ? 'Anna' : 'Ben');
+
+    blau.emit('rematch');
+    const [neuRot, neuBlau] = await Promise.all([rot.warteAuf('gameStart'), blau.warteAuf('gameStart')]);
+    expect(neuRot.color).toBe('blue');          // wer Rot war, spielt jetzt Blau
+    expect(neuBlau.color).toBe('red');
+    expect(neuRot.gameId).not.toBe(startA.gameId);
+  });
+
+  test('Gegner sucht einen neuen Gegner → Revanche-Angebot wird zurückgezogen', async () => {
+    const { rot, blau } = await beendetesSpiel();
+    rot.emit('rematch');
+    await blau.warteAuf('rematchOffered');
+    blau.emit('queue');
+    expect((await rot.warteAuf('rematchCancelled')).reason).toMatch(/keine Revanche/);
+    rot.emit('rematch');                       // geht jetzt nicht mehr
+    await pause(100);
+    expect(blau.hat('rematchOffered')).toBe(false);
+  });
+
+  test('Gegner geht zur Lobby oder trennt die Verbindung → Hinweis', async () => {
+    const erstes = await beendetesSpiel();
+    erstes.blau.emit('leaveGame');
+    await erstes.rot.warteAuf('rematchCancelled');
+
+    const zweites = await spielStarten('C', 'D');
+    zweites.blau.emit('resign');
+    await zweites.rot.warteAuf('gameOver');
+    zweites.blau.trennen();
+    await zweites.rot.warteAuf('rematchCancelled');
+  });
+
+  test('nach einem Verbindungsabbruch gibt es keine Revanche', async () => {
+    const { rot, blau } = await spielStarten();
+    blau.trennen();
+    await rot.warteAuf('gameOver');
+    rot.emit('rematch');
+    await pause(100);
+    expect(rot.hat('rematchWaiting')).toBe(false);
+  });
+
+  test('Revanche eines privaten Spiels bleibt privat', async () => {
+    const a = await anmelden('A');
+    a.emit('createPrivate');
+    const { code } = await a.warteAuf('waiting');
+    const b = await anmelden('B');
+    b.emit('joinPrivate', { code });
+    await Promise.all([a.warteAuf('gameStart'), b.warteAuf('gameStart')]);
+    a.emit('resign');
+    await Promise.all([a.warteAuf('gameOver'), b.warteAuf('gameOver')]);
+    a.emit('rematch');
+    b.emit('rematch');
+    const [neuA] = await Promise.all([a.warteAuf('gameStart'), b.warteAuf('gameStart')]);
+    expect(neuA.private).toBe(true);
+  });
+
+  test('doppelter Revanche-Wunsch wird nur einmal weitergegeben', async () => {
+    const { rot, blau } = await beendetesSpiel();
+    rot.emit('rematch');
+    rot.emit('rematch');
+    await blau.warteAuf('rematchOffered');
+    await pause(100);
+    expect(blau.hat('rematchOffered')).toBe(false);
+  });
+});
+
 describe('Schachuhr', () => {
   test('jeder state enthält beide Uhren, es läuft nur die Uhr am Zug', async () => {
     const { rot, blau, zustandA, startA } = await spielStarten();

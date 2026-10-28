@@ -52,6 +52,7 @@ const PAARE = [
   ['--fokus', '--bg', GRAFIK, 'Fokus-Rahmen auf dem Seitenhintergrund'],
   ['--fokus', '--flaeche', GRAFIK, 'Fokus-Rahmen in Karten'],
   ['--fokus', '--flaeche-hoch', GRAFIK, 'Fokus-Rahmen um sekundäre Knöpfe'],
+  ['--fokus', '--flaeche-tief', GRAFIK, 'Gelber Rahmen um ein Revanche-Angebot'],
   ['--rahmen-stark', '--flaeche-oben', GRAFIK, 'Rahmen des Eingabefelds zur Karte'],
   ['--rahmen-stark', '--flaeche-tief', GRAFIK, 'Rahmen des Eingabefelds zum Feldinneren'],
   ['--rot', '--bg', GRAFIK, 'Roter Brettrand'],

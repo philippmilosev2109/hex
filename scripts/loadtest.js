@@ -47,6 +47,7 @@ const statistik = {
   privateSpiele: 0,
   codeFehler: 0,         // erwartete Fehler bei falschen Codes
   tausche: 0,            // Swap-Regel angewendet
+  revanchen: 0,          // angenommene Revanche-Angebote
   gameOver: {},          // Grund → Anzahl
   zuege: 0,
   ungueltigeZuegeNormal: 0,
@@ -90,7 +91,7 @@ class Bot {
     this.verhalten = verhalten;
     this.name = `Bot${nummer}`;
     this.url = url;
-    this.spieleUebrig = verhalten === 'normal' ? 2 : 1;
+    this.spieleUebrig = verhalten === 'normal' ? 3 : 2;
     this.farbe = null;
     this.spielId = null;
     this.brett = null;
@@ -121,6 +122,8 @@ class Bot {
       });
       s.on('waiting', daten => this.wartet(daten));
       s.on('privateError', ({ reason }) => this.codeFehler(reason));
+      s.on('rematchOffered', () => this.revancheAngebot());
+      s.on('rematchCancelled', () => this.weiterNachSpiel());
       s.on('gameStart', daten => this.spielStart(daten));
       s.on('state', zustand => this.neuerZustand(zustand));
       s.on('invalid', () => this.ungueltig());
@@ -291,11 +294,29 @@ class Bot {
     this.spielId = null;
     this.farbe = null;
     this.spieleUebrig--;
-    if (this.spieleUebrig > 0) {
-      setTimeout(() => !this.fertig && this.socket.emit('queue'), zufall(10, 200));
-    } else {
+    if (this.spieleUebrig <= 0) {
       setTimeout(() => this.verlassen(), zufall(10, 200));
+    } else if (ende.reason !== 'disconnect' && Math.random() < 0.5) {
+      // Revanche anbieten; kommt nach 800 ms nichts, normal weitersuchen
+      this.socket.emit('rematch');
+      clearTimeout(this.revancheTimer);
+      this.revancheTimer = setTimeout(() => this.weiterNachSpiel(), 800);
+    } else {
+      setTimeout(() => this.weiterNachSpiel(), zufall(10, 200));
     }
+  }
+
+  // Gegner möchte eine Revanche → annehmen, wenn noch Spiele übrig sind
+  revancheAngebot() {
+    if (this.fertig || this.spielId !== null || this.spieleUebrig <= 0) return;
+    statistik.revanchen++;
+    this.socket.emit('rematch');
+  }
+
+  // Keine Revanche (mehr) → in die Warteschlange, falls noch kein neues Spiel läuft
+  weiterNachSpiel() {
+    clearTimeout(this.revancheTimer);
+    if (!this.fertig && this.spielId === null && this.spieleUebrig > 0) this.socket.emit('queue');
   }
 
   // hart = Verbindung mitten im Spiel einfach kappen
@@ -309,7 +330,7 @@ class Bot {
   fertigMachen() {
     if (this.fertig) return;
     this.fertig = true;
-    for (const t of [this.zugTimer, this.warteTimer, this.antwortTimer]) clearTimeout(t);
+    for (const t of [this.zugTimer, this.warteTimer, this.antwortTimer, this.revancheTimer]) clearTimeout(t);
     if (this.socket.connected) this.socket.disconnect();
     this.beenden();
   }
@@ -388,7 +409,7 @@ async function main() {
 
   const dauer = ((Date.now() - start) / 1000).toFixed(1);
   console.log(`Spiele gestartet: ${statistik.spieleGestartet} (davon privat: ${statistik.privateSpiele}), Züge: ${statistik.zuege}, Dauer: ${dauer} s`);
-  console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}`);
+  console.log(`Falsche Codes sauber abgelehnt: ${statistik.codeFehler}, Tausch (Swap-Regel): ${statistik.tausche}, Revanchen: ${statistik.revanchen}`);
   console.log('Spielenden nach Grund (je Client gezählt):', statistik.gameOver);
   console.log('Abgelehnte Züge nach Verhalten:', statistik.invalidNachVerhalten);
   console.log('Auf Zeit verloren nach Verhalten:', statistik.timeoutVerlierer);
